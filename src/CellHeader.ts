@@ -187,12 +187,12 @@ export default class CellHeader extends BaseCell {
                 align: this.align,
                 verticalAlign: this.verticalAlign,
                 maxLineClamp: this.maxLineClamp,
-                offsetRight: this.column.sortBy ? 16 : 0, // 排序图标占位
+                offsetRight: (this.column.sortBy || this.column.apiSortable) ? 16 : 0, // 排序图标占位
                 offsetLeft: this.required ? 12 : 0, // 必填星号占位
                 cacheTextKey,
                 textCallback: (textInfo: TextInfo) => {
                     // 排序图标位置,需要跟随文字变化
-                    if (this.column.sortBy) {
+                    if (this.column.sortBy || this.column.apiSortable) {
                         this.drawSortImageX = textInfo.right + 4;
                         this.drawSortImageY = textInfo.top + (textInfo.height - 16) / 2;
                     }
@@ -288,17 +288,27 @@ export default class CellHeader extends BaseCell {
     }
     private drawSortIcon() {
         // 如果没有sortBy配置且不是后端排序，不显示排序图标
-        if (!this.column.sortBy) {
+        if (!this.column.sortBy && !this.column.apiSortable) {
             return;
         }
         const iconSize = 16;
         let iconName = this.sortIconName;
-        // 前端排序
-        const sortState = this.ctx.database.getSortState(this.key);
-        if (sortState.direction === 'asc') {
-            iconName = this.sortAscIconName;
-        } else if (sortState.direction === 'desc') {
-            iconName = this.sortDescIconName;
+        if(this.column.apiSortable) {
+            // 后端排序
+            const backendSortState = this.ctx.database.getBackendSortState(this.key);
+            if (backendSortState.direction === 'asc') {
+                iconName = this.sortAscIconName;
+            } else if (backendSortState.direction === 'desc') {
+                iconName = this.sortDescIconName;
+            }
+        } else {
+            // 前端排序
+            const sortState = this.ctx.database.getSortState(this.key);
+            if (sortState.direction === 'asc') {
+                iconName = this.sortAscIconName;
+            } else if (sortState.direction === 'desc') {
+                iconName = this.sortDescIconName;
+            }
         }
         const icon = this.ctx.icons.get(iconName);
         if (!icon) {

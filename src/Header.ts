@@ -85,11 +85,11 @@ export default class Header {
         this.visibleWidth = this.ctx.stageWidth - SCROLLER_TRACK_SIZE;
 
         // 如果表头宽度小于可视宽度，平均分配
-        const overWidth = this.visibleWidth - this.width;
-        if (this.resizeNum && overWidth > 0) {
-            const diff = Math.floor((overWidth / this.resizeNum) * 100) / 100;
-            this.resizeAllColumn(diff);
-        }
+        // const overWidth = this.visibleWidth - this.width;
+        // if (this.resizeNum && overWidth > 0) {
+        //     const diff = Math.floor((overWidth / this.resizeNum) * 100) / 100;
+        //     this.resizeAllColumn(diff);
+        // }
         const leafLeftCellHeaders = this.fixedLeftCellHeaders.filter((item) => !item.hasChildren);
         this.ctx.fixedLeftWidth = leafLeftCellHeaders.reduce((sum, _item) => sum + _item.width, 0);
         const leafRightCellHeaders = this.fixedRightCellHeaders.filter((item) => !item.hasChildren);
@@ -223,12 +223,12 @@ export default class Header {
         this.ctx.emit('draw');
         let overDiff = 0;
         // 如果表头宽度小于可视宽度，平均分配
-        if (this.width < this.visibleWidth) {
-            const overWidth = this.visibleWidth - this.width;
-            overDiff = Math.floor((overWidth / this.resizeNum) * 100) / 100;
-            this.resizeAllColumn(overDiff);
-            this.ctx.emit('draw');
-        }
+        // if (this.width < this.visibleWidth) {
+        //     const overWidth = this.visibleWidth - this.width;
+        //     overDiff = Math.floor((overWidth / this.resizeNum) * 100) / 100;
+        //     this.resizeAllColumn(overDiff);
+        //     this.ctx.emit('draw');
+        // }
         this.ctx.emit('resizeColumnChange', {
             colIndex: cell.colIndex,
             key: cell.key,

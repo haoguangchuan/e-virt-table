@@ -449,6 +449,11 @@ export default class EVirtTable {
         return this.ctx.database.getColumnByKey(key)?.column;
     }
 
+    // 后端排序相关方法
+    setSortQueryData(sortData: { field: string, direction: 'asc' | 'desc' }[]) {
+        this.ctx.database.setSortQueryData(sortData);
+    }
+
     /**
      * 销毁
      */

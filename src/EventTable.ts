@@ -360,18 +360,35 @@ export default class EventTable {
         ) {
             return;
         }
-        // 前端排序
-        const currentState = this.ctx.database.getSortState(cellHeader.key);
-        let newDirection: 'asc' | 'desc' | 'none';
-        // 按照 不排序->升序->降序->不排序 的顺序循环
-        if (currentState.direction === 'none') {
-            newDirection = 'asc';
-        } else if (currentState.direction === 'asc') {
-            newDirection = 'desc';
+        if(cellHeader.column.apiSortable) {
+            // 后端排序
+            const currentState = this.ctx.database.getBackendSortState(cellHeader.key);
+            let newDirection: 'asc' | 'desc' | 'none';
+
+            // 按照 不排序->升序->降序->不排序 的顺序循环
+            if (currentState.direction === 'none') {
+                newDirection = 'asc';
+            } else if (currentState.direction === 'asc') {
+                newDirection = 'desc';
+            } else {
+                newDirection = 'none';
+            }
+
+            this.ctx.database.setBackendSortState(cellHeader.key, newDirection);
         } else {
-            newDirection = 'none';
+            // 前端排序
+            const currentState = this.ctx.database.getSortState(cellHeader.key);
+            let newDirection: 'asc' | 'desc' | 'none';
+            // 按照 不排序->升序->降序->不排序 的顺序循环
+            if (currentState.direction === 'none') {
+                newDirection = 'asc';
+            } else if (currentState.direction === 'asc') {
+                newDirection = 'desc';
+            } else {
+                newDirection = 'none';
+            }
+            this.ctx.database.setSortState(cellHeader.key, newDirection);
         }
-        this.ctx.database.setSortState(cellHeader.key, newDirection);
     }
     /**
      * 图标进入和离开事件，包括选中，展开，提示图标等

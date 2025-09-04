@@ -52,6 +52,7 @@ export default class Database {
     private filterMethod: FilterMethod | undefined;
     private positions: Position[] = []; //虚拟滚动位置
     private sortState: SortStateMap = new Map();
+    private backendSortState: Map<string, { direction: 'asc' | 'desc' | 'none'; timestamp: number }> = new Map();
     constructor(ctx: Context, options: EVirtTableOptions) {
         this.ctx = ctx;
         const { data = [], columns = [], footerData = [] } = options;
@@ -441,6 +442,47 @@ export default class Database {
             return direction === 'asc' ? comparison : -comparison;
         });
     }
+
+    // 后端排序相关方法
+    getBackendSortState(key: string) {
+        return this.backendSortState.get(key) || { direction: 'none', timestamp: 0 };
+    }
+
+    setBackendSortState(key: string, direction: 'asc' | 'desc' | 'none') {
+        if (direction === 'none') {
+            this.backendSortState.delete(key);
+        } else {
+            this.backendSortState.set(key, { direction, timestamp: Date.now() });
+        }
+        this.triggerSortQuery();
+        this.ctx.emit('draw');
+    }
+
+    clearBackendSortState() {
+        this.backendSortState.clear();
+        this.triggerSortQuery();
+    }
+
+    private triggerSortQuery() {
+        const sortData = Array.from(this.backendSortState.entries())
+            .filter(([_, state]) => state.direction !== 'none')
+            .sort((a, b) => a[1].timestamp - b[1].timestamp)
+            .map(([field, state]) => ({ field, direction: state.direction }));
+
+        this.ctx.emit('sortQuery', sortData);
+    }
+
+    setSortQueryData(sortData: { field: string; direction: 'asc' | 'desc' }[]) {
+        this.backendSortState.clear();
+        sortData.forEach((item, index) => {
+            this.backendSortState.set(item.field, {
+                direction: item.direction,
+                timestamp: index - sortData.length,
+            });
+        });
+        this.ctx.emit('draw');
+    }
+
     /**
      * 根据rowKey,控制指定展开行
      * @param rowKey
