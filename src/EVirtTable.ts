@@ -251,6 +251,10 @@ export default class EVirtTable {
         };
         return rowData;
     }
+    clearCurrentRow() {
+        this.ctx.currentCell = undefined;
+        this.ctx.emit('draw');
+    }
     clearValidate() {
         this.ctx.database.clearValidate();
         this.ctx.emit('draw');
