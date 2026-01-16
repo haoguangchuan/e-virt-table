@@ -67,7 +67,9 @@ export default class Editor {
                 this.doneEdit();
                 return;
             }
-            if ((e.altKey || e.metaKey) && e.code === 'Enter' && this.ctx.editing && this.inputEl) {
+            // 判断是回车（包含数字键盘的回车）
+            const isEnter = e.code === 'Enter' || e.code === 'NumpadEnter';
+            if ((e.altKey || e.metaKey) && isEnter && this.ctx.editing && this.inputEl) {
                 e.preventDefault();
                 const cursorPos = this.inputEl.selectionStart; // 获取光标位置
                 const textBefore = this.inputEl.value.substring(0, cursorPos); // 光标前的文本
@@ -89,7 +91,7 @@ export default class Editor {
                 this.ctx.emit('setMoveFocus', 'RIGHT');
                 return;
             }
-            if (e.code === 'Enter' && this.ctx.editing) {
+            if (isEnter && this.ctx.editing) {
                 e.preventDefault();
                 this.doneEdit();
                 if (e.shiftKey) {
@@ -99,7 +101,7 @@ export default class Editor {
                 this.ctx.emit('setMoveFocus', 'BOTTOM');
                 return;
             }
-            if (e.code === 'Enter' && !this.ctx.editing) {
+            if (isEnter && !this.ctx.editing) {
                 e.preventDefault();
                 this.startEdit();
                 return;
@@ -116,6 +118,7 @@ export default class Editor {
             // 检测功能键（比如 F1, Escape,Tab 等）
             const functionKeys = [
                 'Enter',
+                'NumpadEnter',
                 'Escape',
                 'Tab',
                 'Backspace',
