@@ -118,6 +118,7 @@ export default class Editor {
             // 检测功能键（比如 F1, Escape,Tab 等）
             const functionKeys = [
                 'Enter',
+                'NumpadEnter',
                 'Escape',
                 'Tab',
                 'Backspace',
