@@ -32,6 +32,10 @@ export default class Autofill {
                 // 引进到点
                 this.ctx.stageElement.style.cursor = 'crosshair';
             }
+            // 自动填充移动时，调整滚动条位置
+            if (this.ctx.autofillMove) {
+                this.ctx.startAdjustPosition(e);
+            }
         });
         this.ctx.on('cellMouseenter', (cell) => {
             const { xArr, yArr } = this.ctx.selector;
@@ -50,6 +54,8 @@ export default class Autofill {
         });
         this.ctx.on('mouseup', () => {
             this.setMouseUp();
+            // 停止调整位置
+            this.ctx.stopAdjustPosition();
         });
     }
     /**
@@ -70,6 +76,7 @@ export default class Autofill {
     private setMousedown() {
         this.ctx.autofill.enable = true;
         this.ctx.autofillMove = true;
+        this.ctx.disableHoverIconClick = true;
     }
     private setMouseUp() {
         if (!this.ctx.autofill.enable) {
@@ -83,21 +90,24 @@ export default class Autofill {
         this.ctx.autofillMove = false;
         this.ctx.autofill.xArr = [-1, -1];
         this.ctx.autofill.yArr = [-1, -1];
+        setTimeout(() => {
+            this.ctx.disableHoverIconClick = false;
+        }, 0);
     }
     private setAutofill(xArr: number[], yArr: number[]) {
-        const { ENABLE_AUTOFILL, ENABLE_SELECTOR_SPAN_COL, ENABLE_SELECTOR_SPAN_ROW } = this.ctx.config;
+        const { ENABLE_AUTOFILL, ENABLE_AUTOFILL_SPAN_COL, ENABLE_AUTOFILL_SPAN_ROW } = this.ctx.config;
         if (!ENABLE_AUTOFILL) {
             return;
         }
         let _xArr = xArr;
         let _yArr = yArr;
-        if (!ENABLE_SELECTOR_SPAN_ROW) {
-            const [rowstart] = _yArr;
-            _yArr = [rowstart, rowstart];
+        const xArrSelector = this.ctx.selector.xArr;
+        const yArrSelector = this.ctx.selector.yArr;
+        if (!ENABLE_AUTOFILL_SPAN_ROW && JSON.stringify(yArrSelector) !== JSON.stringify(_yArr)) {
+            return;
         }
-        if (!ENABLE_SELECTOR_SPAN_COL) {
-            const [colstart] = _xArr;
-            _xArr = [colstart, colstart];
+        if (!ENABLE_AUTOFILL_SPAN_COL && JSON.stringify(xArrSelector) !== JSON.stringify(_xArr)) {
+            return;
         }
         // 减少渲染
         if (

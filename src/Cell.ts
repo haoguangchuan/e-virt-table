@@ -63,6 +63,7 @@ export default class Cell extends BaseCell {
     drawCellBgColor = '';
     drawCellSkyBgColor = '';
     drawTextColor = '';
+    drawTextFont = '';
     drawTextX = 0;
     drawTextY = 0;
     drawTextWidth = 0;
@@ -110,6 +111,7 @@ export default class Cell extends BaseCell {
         column: Column,
         row: any,
         cellType: CellType = 'body',
+        isUpdate = true, // 是否更新，虚拟的时候可能不需要更新，解决性能问题
     ) {
         super(ctx, x, y, width, height, cellType, column.fixed);
         this.visibleWidth = this.width;
@@ -125,7 +127,7 @@ export default class Cell extends BaseCell {
         this.cellType = cellType;
         this.align = column.align || this.ctx.config.COLUMNS_ALIGN;
         this.verticalAlign = column.verticalAlign || this.ctx.config.COLUMNS_VERTICAL_ALIGN;
-        this.fixed = column.fixed;
+        this.fixed = column.fixed || '';
         this.level = column.level || 0;
         this.operation = column.operation || false;
         this.column = column;
@@ -147,7 +149,9 @@ export default class Cell extends BaseCell {
         this.formatter = column.formatter;
         this.formatterFooter = column.formatterFooter;
         this.maxLineClamp = column.maxLineClamp || 'auto';
-        this.update();
+        if (isUpdate) {
+            this.update();
+        }
     }
     setWidthHeight(width: number, height: number) {
         this.width = width;
@@ -214,6 +218,7 @@ export default class Cell extends BaseCell {
             } else {
                 this.relationRowKeys = [this.key];
             }
+
             if (Array.isArray(relationColKeys) && relationColKeys.length > 0) {
                 this.relationColKeys = relationColKeys;
             } else {
@@ -491,13 +496,14 @@ export default class Cell extends BaseCell {
             HIGHLIGHT_HOVER_ROW_COLOR,
             STRIPE,
             STRIPE_COLOR,
+            FINDER_CELL_BG_COLOR,
         } = this.ctx.config;
         if (this.cellType === 'footer') {
             let bgColor = FOOTER_BG_COLOR;
             let textColor = FOOTER_TEXT_COLOR;
             if (typeof FOOTER_CELL_STYLE_METHOD === 'function') {
                 const footerCellStyleMethod: CellStyleMethod = FOOTER_CELL_STYLE_METHOD;
-                const { backgroundColor, color } =
+                const { backgroundColor, color, font } =
                     footerCellStyleMethod({
                         row: this.row,
                         rowIndex: this.rowIndex,
@@ -511,6 +517,9 @@ export default class Cell extends BaseCell {
                 // 文字颜色
                 if (color) {
                     textColor = color;
+                }
+                if (font) {
+                    this.drawTextFont = font;
                 }
             }
             // 合计底部背景色
@@ -555,6 +564,7 @@ export default class Cell extends BaseCell {
         // 恢复默认背景色
         let bgColor = BODY_BG_COLOR;
         let textColor = BODY_TEXT_COLOR;
+
         // 只读
         if (!this.ctx.database.getReadonly(this.rowKey, this.key)) {
             bgColor = EDIT_BG_COLOR;
@@ -571,7 +581,7 @@ export default class Cell extends BaseCell {
 
         if (typeof BODY_CELL_STYLE_METHOD === 'function') {
             const cellStyleMethod: CellStyleMethod = BODY_CELL_STYLE_METHOD;
-            const { backgroundColor, color } =
+            const { backgroundColor, color, font } =
                 cellStyleMethod({
                     row: this.row,
                     rowIndex: this.rowIndex,
@@ -587,6 +597,14 @@ export default class Cell extends BaseCell {
             if (color) {
                 textColor = color;
             }
+            if (font) {
+                this.drawTextFont = font;
+            }
+        }
+        // 高亮查找结果
+        const { rowIndex, colIndex, type } = this.ctx.finderBar;
+        if (rowIndex === this.rowIndex && colIndex === this.colIndex && type === 'body') {
+            bgColor = FINDER_CELL_BG_COLOR;
         }
         this.drawCellBgColor = bgColor;
         this.drawTextColor = textColor;
@@ -770,9 +788,9 @@ export default class Cell extends BaseCell {
         }
 
         const { BODY_FONT, CELL_PADDING, CELL_LINE_HEIGHT } = this.ctx.config;
-        const cacheTextKey = `${this.displayText}_${this.drawTextWidth}`;
+        const cacheTextKey = `${this.displayText}_${this.drawTextWidth}_${this.drawTextFont}`;
         const calculatedHeight = this.ctx.paint.calculateTextHeight(this.displayText, this.drawTextWidth, {
-            font: BODY_FONT,
+            font: this.drawTextFont || BODY_FONT,
             padding: CELL_PADDING,
             align: this.align,
             verticalAlign: this.verticalAlign,
@@ -896,36 +914,51 @@ export default class Cell extends BaseCell {
      * 获取样式
      */
     getOverlayerViewsStyle() {
-        let left = `${this.drawX - this.ctx.fixedLeftWidth}px`;
-        let top = `${this.drawY - this.ctx.body.y}px`;
+        let left = this.drawX - this.ctx.fixedLeftWidth;
+        let top = this.drawY - this.ctx.body.y;
         // 固定列
         if (this.fixed === 'left') {
-            left = `${this.drawX}px`;
+            left = this.drawX;
         } else if (this.fixed === 'right') {
-            left = `${this.drawX - (this.ctx.stageWidth - this.ctx.fixedRightWidth)}px`;
+            left = this.drawX - (this.ctx.stageWidth - this.ctx.fixedRightWidth);
         }
         // 合计
         if (this.cellType === 'footer') {
             if (this.ctx.config.FOOTER_FIXED) {
-                top = `${this.drawY - this.ctx.footer.y}px`;
+                top = this.drawY - this.ctx.footer.y;
             }
         }
-        // 防止闪烁
+        // 定位到居中
+        if (this.autoRowHeight && this.render && this.verticalAlign === 'middle') {
+            const renderHeight = this.ctx.database.getOverlayerAutoHeight(this.rowIndex, this.colIndex);
+            if (renderHeight < this.visibleHeight && renderHeight > 0) {
+                const remainTop = (this.visibleHeight - renderHeight) / 2;
+                top = top + remainTop;
+            }
+        }
+        // 防止覆盖层叠加显示,直接隐藏后显示
         if (this.autoRowHeight && this.ctx.database.getOverlayerAutoHeight(this.rowIndex, this.colIndex) === 0) {
-            left = '-99999px';
-            top = '-99999px';
+            left = -99999;
+            top = -99999;
+        }
+        let autoStyle = {};
+        if (this.rowspan === 0) {
+            autoStyle = {
+                display: 'none',
+            };
         }
         return {
             position: 'absolute',
             overflow: 'hidden',
-            left,
-            top,
+            left: `${Math.round(left - 1)}px`,
+            top: `${Math.round(top - 1)}px`,
             width: `${this.visibleWidth}px`,
-            height: this.autoRowHeight ? `auto` : `${this.visibleHeight}px`,
+            height: this.autoRowHeight ? 'auto' : `${this.visibleHeight}px`,
             // height: `${this.visibleHeight}px`,
             // minHeight: `${this.visibleHeight}px`,
             pointerEvents: 'initial',
             userSelect: 'none',
+            ...autoStyle,
         };
     }
     drawContainer() {
@@ -1038,7 +1071,7 @@ export default class Cell extends BaseCell {
         if (typeof text !== 'string') {
             text = `${text}`;
         }
-        const cacheTextKey = `${text}_${this.drawTextWidth}`;
+        const cacheTextKey = `${text}_${this.drawTextWidth}_${this.drawTextFont}`;
         this.ellipsis = this.ctx.paint.drawText(
             text,
             this.drawTextX,
@@ -1046,7 +1079,7 @@ export default class Cell extends BaseCell {
             this.drawTextWidth,
             this.drawTextHeight,
             {
-                font: BODY_FONT,
+                font: this.drawTextFont || BODY_FONT,
                 padding: CELL_PADDING,
                 align: this.align,
                 verticalAlign: this.verticalAlign,

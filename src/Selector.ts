@@ -6,12 +6,7 @@ import { throttle, decodeSpreadsheetStr, encodeToSpreadsheetStr } from './util';
 export default class Selector {
     private isCut = false;
     private isMultipleRow = false;
-    private mousedownHeader = false;
     private ctx: Context;
-    private adjustPositionX = '';
-    private adjustPositionY = '';
-    private timerX = 0; // 水平滚动定时器
-    private timerY = 0; // 垂直滚动定时器
 
     constructor(ctx: Context) {
         this.ctx = ctx;
@@ -25,20 +20,12 @@ export default class Selector {
         this.ctx.on(
             'mousemove',
             throttle((e) => {
-                const { offsetY, offsetX } = this.ctx.getOffset(e);
-                const isInsideBody =
-                    this.ctx.isTarget(e) &&
-                    offsetX > 0 &&
-                    offsetX < this.ctx.body.visibleWidth &&
-                    offsetY > this.ctx.header.visibleHeight &&
-                    offsetY < this.ctx.header.visibleHeight + this.ctx.body.visibleHeight;
-                if (this.ctx.selectorMove || this.ctx.autofillMove) {
-                    // 如果是body外部就调整位置
-                    if (!isInsideBody && !this.mousedownHeader) {
-                        this.startAdjustPosition(e);
-                    } else {
-                        this.stopAdjustPosition();
-                    }
+                // focus为fixed的不处理
+                if (this.ctx.focusCell?.fixed || this.ctx.focusCellHeader?.fixed) {
+                    return;
+                }
+                if (!this.ctx.dragHeaderIng && this.ctx.selectorMove) {
+                    this.ctx.startAdjustPosition(e);
                 }
             }, 100),
         );
@@ -57,6 +44,9 @@ export default class Selector {
                 return;
             }
             this.mouseenter();
+        });
+        this.ctx.on('cellClick', () => { 
+            this.adjustBoundaryPosition();
         });
         this.ctx.on('cellMousedown', (cell, e) => {
             if (!this.ctx.isTarget(e)) {
@@ -88,15 +78,18 @@ export default class Selector {
             this.ctx.emit('selectorClick', cell);
         });
         this.ctx.on('mouseup', () => {
-            this.mousedownHeader = false;
-            // mousedown销毁dom会导致click事件清除
-            // 加个setTimeout小延迟一下，使得editor cellClick 判断adjustPositioning正常
-            const timer = setTimeout(() => {
-                this.ctx.adjustPositioning = false;
-                clearTimeout(timer);
+            this.ctx.selectorMove = false;
+            this.ctx.stopAdjustPosition();
+            setTimeout(() => {
+                this.ctx.disableHoverIconClick = false;
             }, 0);
         });
         this.ctx.on('cellHeaderHoverChange', (cell) => {
+            if (this.ctx.mousedown) {
+                this.selectCols(cell);
+            }
+        });
+        this.ctx.on('cellHoverChange', (cell) => {
             if (this.ctx.mousedown) {
                 this.selectCols(cell);
             }
@@ -114,11 +107,18 @@ export default class Selector {
             if (style.userSelect !== 'text') {
                 e.preventDefault();
             }
-            this.mousedownHeader = true;
-            this.selectCols(cell);
+            this.ctx.clearSelector();
+            if (cell.operation) {
+                this.selectAll();
+            } else {
+                this.selectCols(cell);
+            }
         });
         this.ctx.on('keydown', (e) => {
             if (this.ctx.editing) {
+                return;
+            }
+            if (this.ctx.finding) {
                 return;
             }
             // CTRL+C／Command+C
@@ -187,13 +187,17 @@ export default class Selector {
         this.ctx.on('setSelectorCell', (cell: Cell) => {
             this.ctx.setFocusCell(cell);
             this.click();
+            this.adjustBoundaryPosition();
         });
-        this.ctx.on('mouseup', () => {
-            this.ctx.selectorMove = false;
-            this.stopAdjustPosition();
+        //解耦：外部调用选择单元格
+        this.ctx.on('selectCols', (cell: CellHeader) => {
+            this.selectCols(cell);
         });
     }
     private setSelector(xArr: number[], yArr: number[]) {
+        if (this.ctx.dragHeaderIng) {
+            return;
+        }
         const { ENABLE_SELECTOR_SPAN_COL, ENABLE_SELECTOR_SPAN_ROW } = this.ctx.config;
         let _xArr = xArr;
         let _yArr = yArr;
@@ -212,6 +216,7 @@ export default class Selector {
         ) {
             if (this.ctx.mousedown) {
                 this.ctx.selectorMove = true;
+                this.ctx.disableHoverIconClick = true;
             }
             this.ctx.selector.enable = true;
             const {
@@ -240,8 +245,6 @@ export default class Selector {
             if (maxY > areaMaxY) {
                 return;
             }
-            // 聚焦，解决iframe键盘事件不触发
-            this.ctx.stageElement.focus({ preventScroll: true });
             // 启用合并单元格关联
             if (this.ctx.config.ENABLE_MERGE_CELL_LINK) {
                 const adjustMerge = this.adjustMergeCells(_xArr, _yArr);
@@ -277,6 +280,18 @@ export default class Selector {
             }
             this.ctx.selector.xArr = _xArr;
             this.ctx.selector.yArr = _yArr;
+            // 判断是否选择列中
+            if (maxY === this.ctx.maxRowIndex && minY === 0) {
+                this.ctx.selectColsIng = true;
+            } else {
+                this.ctx.selectColsIng = false;
+            }
+            // 判断是否选择行中
+            if (maxX === this.ctx.maxColIndex && minX === 0) {
+                this.ctx.selectRowsIng = true;
+            } else {
+                this.ctx.selectRowsIng = false;
+            }
             this.ctx.emit('setSelector', this.ctx.selector);
             this.ctx.emit('drawView');
         }
@@ -284,6 +299,14 @@ export default class Selector {
     private adjustMergeCells(xArr: number[], yArr: number[]) {
         const [minY, maxY] = yArr;
         const [minX, maxX] = xArr;
+        // 如果是选择行或列中就不处理，因为会导致性能问题
+        if ((maxY === this.ctx.maxRowIndex && minY === 0) || (maxX === this.ctx.maxColIndex && minX === 0)) {
+            return {
+                xArr,
+                yArr,
+                onlyMergeCell: false,
+            };
+        }
         let topBottomCells: Cell[] = [];
         let leftRightCells: Cell[] = [];
         // 遍历选择中的单元格
@@ -346,7 +369,7 @@ export default class Selector {
             onlyMergeCell,
         };
     }
-    private selectCols(cell: CellHeader) {
+    private selectCols(cell: CellHeader | Cell) {
         // 启用单选就不能批量选中
         if (this.ctx.config.ENABLE_SELECTOR_SINGLE) {
             return;
@@ -365,32 +388,21 @@ export default class Selector {
         if (this.ctx.editing) {
             return;
         }
-        // 是可操作列就全选
-        if (cell.operation) {
-            this.selectAll();
-            return;
-        }
         const { SELECTOR_AREA_MIN_Y, SELECTOR_AREA_MAX_Y, SELECTOR_AREA_MAX_Y_OFFSET } = this.ctx.config;
         const minY = SELECTOR_AREA_MIN_Y;
         const maxY = SELECTOR_AREA_MAX_Y || this.ctx.maxRowIndex - SELECTOR_AREA_MAX_Y_OFFSET;
-        if (this.ctx.mousedown && this.ctx.focusCellHeader) {
+        if (this.ctx.focusCellHeader) {
             const { colIndex } = this.ctx.focusCellHeader;
-            //
             this.ctx.clearSelector();
-            if (cell.colIndex >= colIndex) {
+            if (this.ctx.mousedown && cell.colIndex >= colIndex) {
                 const xArr = [colIndex, cell.colIndex + cell.colspan - 1];
                 const yArr = [minY, maxY];
                 this.setSelector(xArr, yArr);
             } else {
-                const xArr = [cell.colIndex, colIndex];
+                const xArr = [cell.colIndex, colIndex + cell.colspan - 1];
                 const yArr = [minY, maxY];
                 this.setSelector(xArr, yArr);
             }
-        } else {
-            // this.setFocusCellHeader(cell);
-            const xArr = [cell.colIndex, cell.colIndex + cell.colspan - 1];
-            const yArr = [minY, maxY];
-            this.setSelector(xArr, yArr);
         }
     }
     private selectAll() {
@@ -509,7 +521,6 @@ export default class Selector {
             const xArr = [focusCell.colIndex, focusCell.colIndex];
             const yArr = [focusCell.rowIndex, focusCell.rowIndex];
             this.setSelector(xArr, yArr);
-            this.adjustBoundaryPosition();
         }
     }
 
@@ -826,18 +837,6 @@ export default class Selector {
         this.ctx.emit('moveFocus', cell);
         this.ctx.emit('draw');
     }
-    private stopAdjustPosition() {
-        this.adjustPositionX = '';
-        this.adjustPositionY = '';
-        if (this.timerX) {
-            clearInterval(this.timerX);
-            this.timerX = 0;
-        }
-        if (this.timerY) {
-            clearInterval(this.timerY);
-            this.timerY = 0;
-        }
-    }
     // 判断是否在设置范围内
     private isInSettingRange(rowIndex: number, colIndex: number) {
         const {
@@ -865,65 +864,6 @@ export default class Selector {
             return false;
         }
         return true;
-    }
-    /**
-     * 调整滚动条位置，让到达边界时自动滚动
-     */
-    private startAdjustPosition(e: MouseEvent) {
-        const { offsetX, offsetY } = this.ctx.getOffset(e);
-        let positionX = '';
-        let positionY = '';
-        if (offsetX < 0) {
-            positionX = 'left';
-        } else if (offsetX > this.ctx.body.visibleWidth) {
-            positionX = 'right';
-        }
-        if (offsetY < this.ctx.header.visibleHeight) {
-            positionY = 'top';
-        } else if (offsetY > this.ctx.header.visibleHeight + this.ctx.body.visibleHeight) {
-            positionY = 'bottom';
-        }
-        if (positionX && this.adjustPositionX !== positionX) {
-            this.adjustPositionX = positionX;
-            const position = positionX === 'left' ? -1 : 1;
-            let scrollSpeedX = 10 * position; // 滚动速度
-            if (this.timerX) {
-                clearInterval(this.timerX);
-                this.timerX = 0;
-            }
-            this.timerX = setInterval(() => {
-                // 增加滚动速度
-                scrollSpeedX *= 1.5; // 加速因子
-                const { scrollX } = this.ctx;
-                const num = scrollX + scrollSpeedX;
-                if (num < 0 || num > this.ctx.body.width) {
-                    clearInterval(this.timerX);
-                    this.timerX = 0;
-                }
-                this.ctx.setScrollX(num);
-            }, 100); // 每100毫秒执行一次
-        }
-
-        if (positionY && this.adjustPositionY !== positionY) {
-            this.adjustPositionY = positionY;
-            const position = positionY === 'top' ? -1 : 1;
-            let scrollSpeedY = 10 * position; // 滚动速度
-            if (this.timerY) {
-                clearInterval(this.timerY);
-                this.timerY = 0;
-            }
-            this.timerY = setInterval(() => {
-                // 增加滚动速度
-                scrollSpeedY *= 1.5; // 加速因子
-                const { scrollY } = this.ctx;
-                const num = scrollY + scrollSpeedY;
-                if (num < 0 || num > this.ctx.body.height) {
-                    clearInterval(this.timerY);
-                    this.timerY = 0;
-                }
-                this.ctx.setScrollY(num);
-            }, 100); // 每100毫秒执行一次
-        }
     }
     /**
      * 调整滚动条位置，让焦点单元格始终出现在可视区域内
@@ -982,21 +922,9 @@ export default class Selector {
             _scrollY = Math.floor(scrollY + diffBottom);
         }
         // >1是因为上面为了可移动加1，所以这里要大于2(保险一点)
-        if (Math.abs(scrollX - _scrollX) > 2 || Math.abs(scrollY - _scrollY) > 2) {
-            this.ctx.adjustPositioning = true;
+        if (Math.abs(scrollX - _scrollX) > 2.5 || Math.abs(scrollY - _scrollY) > 2.5) {
             this.ctx.setScroll(_scrollX, _scrollY);
-            // fix:处理移动后编辑器，需要再点击一次,编辑器那边有监听
-            this.ctx.emit('adjustBoundaryPosition', focusCell);
         }
     }
-    destroy() {
-        if (this.timerX) {
-            clearTimeout(this.timerX);
-            this.timerX = 0;
-        }
-        if (this.timerY) {
-            clearTimeout(this.timerY);
-            this.timerY = 0;
-        }
-    }
+    destroy() { }
 }

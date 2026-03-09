@@ -61,6 +61,7 @@ export default class Body {
         this.visibleWidth = this.ctx.stageWidth - SCROLLER_TRACK_SIZE;
         // 底部高度
         const footerHeight = this.ctx.footer.height;
+        this.ctx.isEmpty = !this.data.length;
         if (!this.data.length && !HEIGHT) {
             this.height = EMPTY_BODY_HEIGHT;
         } else if (!this.data.length && HEIGHT) {
@@ -299,7 +300,7 @@ export default class Body {
             config: { HEADER_BG_COLOR, SCROLLER_TRACK_SIZE },
         } = this.ctx;
 
-        if (scrollX > 0 && fixedLeftWidth !== 0) {
+        if (scrollX > 0 && fixedLeftWidth !== 0 && !this.ctx.isEmpty) {
             this.ctx.paint.drawShadow(this.x, this.y, fixedLeftWidth, this.height, {
                 fillColor: HEADER_BG_COLOR,
                 side: 'right',
@@ -309,7 +310,11 @@ export default class Body {
             });
         }
         // 右边阴影
-        if (scrollX < Math.floor(header.width - stageWidth - 1) && fixedRightWidth !== SCROLLER_TRACK_SIZE) {
+        if (
+            scrollX < Math.floor(header.width - stageWidth - 1) &&
+            fixedRightWidth !== SCROLLER_TRACK_SIZE &&
+            !this.ctx.isEmpty
+        ) {
             const x = header.width - (this.x + this.width) + stageWidth - fixedRightWidth;
             this.ctx.paint.drawShadow(x, this.y, fixedRightWidth, this.height, {
                 fillColor: HEADER_BG_COLOR,
@@ -378,12 +383,12 @@ export default class Body {
         this.renderRows = rows;
         this.ctx.body.renderRows = rows;
     }
-    updateAutoHeight() {
+    updateAutoHeight(): boolean {
         const rows = this.ctx.body.renderRows;
         const hasAutoHeight = rows.some((row) => row.calculatedHeightCells.length > 0);
         // 如果没有计算格子，不更新
         if (!hasAutoHeight) {
-            return;
+            return false;
         }
         // 更新计算高度
         rows.forEach((row) => {
@@ -394,7 +399,7 @@ export default class Body {
             height: row.calculatedHeight,
             rowIndex: row.rowIndex,
         }));
-        this.ctx.database.setBatchCalculatedRowHeight(heights);
+        return this.ctx.database.setBatchCalculatedRowHeight(heights);
     }
     draw() {
         // 容器背景

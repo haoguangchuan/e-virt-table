@@ -15,9 +15,10 @@ export default class EventTable {
     }
     private init(): void {
         // 监听窗口大小变化
-        this.resizeObserver = new ResizeObserver(() => {
+        this.resizeObserver = new ResizeObserver((entries) => {
             this.ctx.emit('resetHeader');
-            this.ctx.emit('resizeObserver');
+            this.ctx.emit('resizeObserver', entries);
+            this.ctx.emit('containerResize', this.ctx.containerElement);
         });
         this.resizeObserver.observe(this.ctx.containerElement);
         this.mutationObserver = new MutationObserver((mutations) => {
@@ -37,10 +38,6 @@ export default class EventTable {
 
         // 按下事件
         this.ctx.on('mousedown', (e) => {
-            // 左边点击
-            if (e.button !== 0) {
-                return;
-            }
             // 是否忙碌，进行其他操作
             if (this.isBusy(e)) {
                 return;
@@ -48,12 +45,27 @@ export default class EventTable {
             const { offsetY, offsetX } = this.ctx.getOffset(e);
             const y = offsetY;
             const x = offsetX;
+            // 判断是否在body外部
+            const {
+                body: { height, visibleHeight, visibleWidth, y: bodyY },
+            } = this.ctx;
+            const realityHeight = Math.min(height, visibleHeight);
+            const isInBody = x > 0 && x < visibleWidth && y > bodyY && y < bodyY + realityHeight;
+            if (!isInBody) {
+                this.ctx.emit('mousedownBodyOutside', e);
+            }
+            // 左边点击
+            if (e.button !== 0) {
+                return;
+            }
             this.handleHeaderEvent(x, y, this.ctx.header.renderCellHeaders, (cell: CellHeader) => {
                 this.ctx.focusCellHeader = cell;
+                this.ctx.focusCell = undefined;
                 this.ctx.emit('cellHeaderMousedown', cell, e);
             });
             this.handleBodyEvent(x, y, this.ctx.body.renderRows, (cell: Cell) => {
                 this.ctx.setFocusCell(cell);
+                this.ctx.focusCellHeader = undefined;
                 this.ctx.emit('cellMousedown', cell, e);
             });
         });
@@ -222,16 +234,24 @@ export default class EventTable {
                     this.ctx.hoverCell = cell;
                     this.ctx.hoverRow = this.ctx.body.renderRows.find((item) => item.rowKey === cell.rowKey);
                     this.ctx.emit('rowHoverChange', this.ctx.hoverRow, cell, e);
-                    this.ctx.emit('drawView');
+                    this.ctx.emit('draw');
                 }
                 this.ctx.hoverCell = cell;
                 this.ctx.emit('cellHoverChange', cell, e);
+            });
+            this.handleFooterEvent(x, y, this.ctx.footer.renderRows, (cell: Cell) => {
+                this.ctx.emit('cellFooterMouseenter', cell, e);
+                // 移出事件
+                if (this.ctx.hoverCell && this.ctx.hoverCell !== cell) {
+                    this.ctx.emit('cellFooterMouseleave', cell, e);
+                }
+                this.ctx.emit('cellFooterHoverChange', cell, e);
             });
         });
     }
     private hoverIconClick(cell: Cell) {
         // 鼠标移动到图标上会变成pointer，所以这里判断是否是pointer就能判断出是图标点击的
-        if (cell.hoverIconName && this.ctx.isPointer) {
+        if (cell.hoverIconName && this.ctx.isPointer && !this.ctx.disableHoverIconClick) {
             this.ctx.emit('hoverIconClick', cell);
         }
     }
@@ -579,6 +599,25 @@ export default class EventTable {
             if (x > drawX && x < drawX + cell.width && y > drawY && y < drawY + cell.height) {
                 callback(cell);
                 return; // 找到后直接返回
+            }
+        }
+    }
+    private handleFooterEvent(x: number, y: number, renderRows: Row[], callback: Function, visible = false) {
+        for (const row of renderRows) {
+            // 优先处理固定列
+            const cells = row.fixedCells.concat(row.noFixedCells);
+            for (const cell of cells) {
+                const drawX = cell.getDrawX();
+                const drawY = cell.getDrawY();
+                if (visible) {
+                    if (x > drawX && x < drawX + cell.visibleWidth && y > drawY && y < drawY + cell.visibleHeight) {
+                        callback(cell);
+                        return; // 找到后直接返回
+                    }
+                } else if (x > drawX && x < drawX + cell.width && y > drawY && y < drawY + cell.height) {
+                    callback(cell);
+                    return; // 找到后直接返回
+                }
             }
         }
     }

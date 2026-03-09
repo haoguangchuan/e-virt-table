@@ -28,7 +28,6 @@ type EVirtTableOptions = {
 | HEADER_FONT | 表头字体 | string | 12px normal Arial |
 | BODY_FONT | 单元格字体 | string | 12px normal Arial |
 | BORDER_COLOR | 区域边框颜色 | string | #e1e6eb |
-| WIDTH | 宽度为 0 表示自适应100% | number | 0 |
 | RESIZE_MIN_WIDTH | 最小可调整宽度 | number | 40 |
 | HEIGHT | 高度，高度为 0 表示自适应 | number | 0 |
 | COLUMNS_ALIGN | 全局水平对齐方式 | `"left"`, `"center"`, `"right"` | left |
@@ -69,6 +68,7 @@ type EVirtTableOptions = {
 | SELECT_ROW_COL_BG_COLOR | 当前焦点单元格所在行、列的背景色 | string | `rgba(82,146,247,0.1)` |
 | EDIT_BG_COLOR | 可编辑背景色 | string | `rgba(221,170,83,0.1)` |
 | AUTOFILL_POINT_BORDER_COLOR | 填充点的边框颜色 | string | #fff |
+| CHECKBOX_KEY | 选择key,设置后会根据key关联勾选数据 | string | - |
 | CHECKBOX_COLOR | 选择框颜色 | string | `rgb(82,146,247)` |
 | CHECKBOX_SIZE | 选择框大小 | number | 20 |
 | CHECKBOX_CHECK_SVG | 选择框选中图标 | string | — |
@@ -97,7 +97,6 @@ type EVirtTableOptions = {
 | ENABLE_SELECTOR_ALL_COLS | 启用选择器-批量选中行 | boolean | true |
 | ENABLE_MERGE_CELL_LINK | 启用合并格子数据关联 | boolean | false |
 | ENABLE_AUTOFILL | 启用填充 | boolean | true |
-| ENABLE_CONTEXT_MENU | 启用右键 | boolean | true |
 | ENABLE_COPY | 启用复制 | boolean | true |
 | ENABLE_PASTER | 启用粘贴 | boolean | true |
 | ENABLE_RESIZE_ROW | 启用调整行高 | boolean | true |
@@ -122,6 +121,12 @@ type EVirtTableOptions = {
 | PLACEHOLDER_COLOR | 占位文本颜色 | string | `#CDD0DC` |
 | CELL_HOVER_ICON_BG_COLOR | hover编辑图标背景色 | string | `#fff` |
 | CELL_HOVER_ICON_BORDER_COLOR | hover编辑图标边框 | string | `#DDE0EA` |
+| ENABLE_CONTEXT_MENU        | 是否启用 body 区域右键菜单    | boolean    | false  |
+| ENABLE_HEADER_CONTEXT_MENU | 是否启用 header 区域右键菜单  | boolean    | false  |
+| CONTEXT_MENU               | body 区域默认右键菜单项配置   | MenuItem[] | - |
+| HEADER_CONTEXT_MENU        | header 区域默认右键菜单项配置 | MenuItem[] | - |
+| CUSTOM_BODY_CONTEXT_MENU   | 自定义 body 区域右键菜单项    | MenuItem[] | []     |
+| CUSTOM_HEADER_CONTEXT_MENU | 自定义 header 区域右键菜单项  | MenuItem[] | []     |
 | HEADER_CELL_STYLE_METHOD | 自定义表头单元格样式 | ^[Function]`({column,colIndex})=>CellStyleOptions` | — |
 | BODY_CELL_STYLE_METHOD | 自定义 body 单元格样式 | ^[Function]`({row, column, rowIndex, colIndex,value,isHasChanged})=>CellStyleOptions` | — |
 | FOOTER_CELL_STYLE_METHOD | 自定 footer 义单元格样式 | ^[Function]`({row, column, rowIndex, colIndex,value})=>CellStyleOptions` | — |
@@ -129,7 +134,7 @@ type EVirtTableOptions = {
 | BODY_CELL_FORMATTER_METHOD | 自定义格式化 | ^[Function]`({row, column, rowIndex, colIndex,value})=>string\|viod` | — |
 | BODY_CELL_RULES_METHOD | 自定义校验规则 | ^[Function]`({row, column, rowIndex, colIndex,value})=>Rules\|viod` | — |
 | BODY_CELL_TYPE_METHOD | 自定义类型 | ^[Function]`({row, column, rowIndex, colIndex,value})=>Type\|viod` | — |
-| BODY_CELL_EDITOR_METHOD | 自定义编辑器类型 | ^[Function]`({row, column, rowIndex, colIndex,value})=>string\|viod` | — |
+| BODY_CELL_EDITOR_METHOD | 自定义编辑器类型 | ^[Function]`({row, column, rowIndex, colIndex,value})=>EditorOptions` | — |
 | BODY_CELL_RENDER_METHOD | 自定义单元格渲染 | ^[Function]`({row, column, rowIndex, colIndex,headIndex,visibleRows,rows})=>string\|viod` | — |
 | SPAN_METHOD | 自定义跨列/行渲染 | ^[Function]`({row, column, rowIndex, colIndex,value,visibleLeafColumns,headIndex,headPosition,visibleRows,rows})=>SpanType` | — |
 | SELECTABLE_METHOD | 自定义选择禁用 | ^[Function]`({row, rowIndex})=>boolean\|viod` | — |
@@ -184,6 +189,8 @@ type EVirtTableOptions = {
 | onPastedDataOverflow | 粘贴溢出时回调 | `PastedDataOverflow`  |
 | sortChange | 当表格的排序条件发生变化的时候会触发该事件 | Map<string, SortStateMapItem> |
 | error | error回调 | — |
+| customHeaderChange | 自定义表头事件 | `CustomHeader` |
+
 
 ## Methods
 
@@ -236,8 +243,12 @@ type EVirtTableOptions = {
 | getCellValue           | 通过 rowKey 和 key 获取格子值 | (rowKey, key)                                             |
 | getUtils               | 获取工具类方法，如内置合并行列方法                  | —                                     |
 | clearSort              | 清除排序                      | —                                                         |
+| clearMaxRowHeight      | 清除最大行高记录（重置所有行高） | —                                                       |
 | contextMenuHide        | 隐藏右键菜单                  | —                                                         |
 | destroy                | 销毁                          | —                                                         |
+| setCustomHeader | 设置自定义表头                   | `(CustomHeader,ignoreEmit)` |
+| getCustomHeader | 获取自定义表头数据 | `{CustomHeader，Column[]}`  |
+| clearChangeData | 清空改变值 |  —  |
 
 ## Column
 | 参数 | 说明 | 类型 | 默认值 |
@@ -280,7 +291,10 @@ type EVirtTableOptions = {
 | sortDescIconName | 降序排序图标 | `string` | — |
 | rules | 校验规则 | Rules | — |
 | maxLineClamp | 最大溢出截断行数，默认`auto`根据内容撑开 | `auto,number` | auto |
+| maxLineClampHeader | 表头最大溢出截断行数，默认`auto`根据内容撑开 | `auto,number` | auto |
 | autoRowHeight | 当前列行自适应高度 | boolean | false |
+| dragDisabled | 当前列禁用拖拽 | boolean | false |
+| selectorCellValueType | 选择器选择格子类型 | `SelectorCellValueType` | `value` |
 
 ## Row
 
@@ -394,5 +408,49 @@ type PastedDataOverflow = {
 type SortDirection = 'asc' | 'desc' | 'none';
 type SortStateMapItem = { direction: SortDirection; timestamp: number };
 type SortStateMap = Map<string, SortStateMapItem>;
+type MenuItemEvent =
+    | 'copy'
+    | 'paste'
+    | 'cut'
+    | 'clearSelected'
+    | 'fixedLeft'
+    | 'fixedRight'
+    | 'fixedNone'
+    | 'hide'
+    | 'resetHeader'
+    | 'visible';
+
+type MenuItem = {
+    label: string;
+    value: string | MenuItemEvent;
+    event?: Function;
+    icon?: string;
+    divider?: boolean;
+    disabled?: boolean;
+    children?: MenuItem[];
+};
+
+const HEADER_CONTEXT_MENU: MenuItem[] = [
+    { label: '左固定', value: 'fixedLeft' },
+    { label: '右固定', value: 'fixedRight' },
+    { label: '取消固定', value: 'fixedNone' },
+    { label: '隐藏', value: 'hide' },
+    { label: '显示', value: 'visible' },
+    { label: '恢复默认', value: 'resetHeader' },
+];
+
+type CustomHeader = {
+    fixedData?: Record<string, Fixed | ''>;
+    sortData?: Record<string, number>;
+    hideData?: Record<string, boolean>;
+    resizableData?: Record<string, number>;
+};
+
+export type EditorOptions = {
+    type: string;
+    props: any;
+};
+
+type SelectorCellValueType = 'displayText' | 'value';
 
 ```

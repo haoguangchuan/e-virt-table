@@ -19,6 +19,9 @@ import type {
     BeforeValueChangeItem,
     SortByType,
     SortStateMap,
+    CustomHeader,
+    Fixed,
+    RowMaxHeightData,
 } from './types';
 import { generateShortUUID, toLeaf, compareDates } from './util';
 import { HistoryItemData } from './History';
@@ -41,7 +44,15 @@ export default class Database {
     private validationErrorMap = new Map<string, ValidateResult>();
     private itemRowKeyMap = new WeakMap();
     private bufferData: any[] = [];
+    private customHeader: CustomHeader = {
+        fixedData: {},
+        sortData: {},
+        hideData: {},
+        resizableData: {},
+    };
+
     overlayerAutoHeightMap = new Map<string, number>();
+    private maxRowHeightCellMap = new Map<string, RowMaxHeightData>(); // 记录每行的计算高度（按 rowKey 存储）
     private bufferCheckState = {
         buffer: false,
         check: false,
@@ -63,13 +74,15 @@ export default class Database {
     }
     // 初始化默认不忽略清空改变值和校验map
     init(isClear = true) {
-        this.ctx.paint.clearTextCache();    
+        this.ctx.paint.clearTextCache();
         this.clearBufferData();
         this.rowKeyMap.clear();
         this.checkboxKeyMap.clear();
         this.colIndexKeyMap.clear();
         this.rowIndexRowKeyMap.clear();
         this.rowKeyRowIndexMap.clear();
+        // 清空计算高度记录
+        this.maxRowHeightCellMap.clear();
         // 判断是否有选择和树形结构
         const _columns = this.getColumns();
         const leafColumns = toLeaf(_columns);
@@ -113,8 +126,18 @@ export default class Database {
      */
     private initData(dataList: any[], level: number = 0, parentRowKeys: string[] = []) {
         const siblingsLength = dataList.length;
+        const {
+            ROW_KEY = '',
+            DEFAULT_EXPAND_ALL,
+            CELL_HEIGHT,
+            SELECTABLE_METHOD,
+            CHECKBOX_KEY,
+            TREE_CHILDREN_KEY,
+        } = this.ctx.config;
         dataList.forEach((item, index) => {
-            const { ROW_KEY = '', DEFAULT_EXPAND_ALL, CELL_HEIGHT, SELECTABLE_METHOD, CHECKBOX_KEY } = this.ctx.config;
+            if (TREE_CHILDREN_KEY !== 'children') {
+                item.children = item[TREE_CHILDREN_KEY];
+            }
             const _rowKey = item[ROW_KEY]; // 行唯一标识,否则就rowKey
             const rowKey = _rowKey !== undefined && _rowKey !== null ? `${_rowKey}` : generateShortUUID();
             this.itemRowKeyMap.set(item, rowKey);
@@ -197,25 +220,26 @@ export default class Database {
         this.clearBufferData(); // 清除缓存数据
     }
     // 批量设置计算行高度
-    setBatchCalculatedRowHeight(rowIndexHeightList: { rowIndex: number; height: number }[]) {
+    setBatchCalculatedRowHeight(rowIndexHeightList: { rowIndex: number; height: number }[]): boolean {
         // 判断是否需要更新
-        const isNeedUpdate = rowIndexHeightList.every(({ height, rowIndex }) => {
+        const isNoNeedUpdate = rowIndexHeightList.every(({ height, rowIndex }) => {
             const position = this.getPositionForRowIndex(rowIndex);
             return position.calculatedHeight === height;
         });
-        if (isNeedUpdate) {
-            return;
+        if (isNoNeedUpdate) {
+            return false;
         }
         rowIndexHeightList.forEach(({ rowIndex, height }) => {
             const rowKey = this.rowIndexRowKeyMap.get(rowIndex);
             if (rowKey) {
                 const row = this.rowKeyMap.get(rowKey);
-                row.calculatedHeight = height;
+                const { height: rowMaxHeight = -1 } = this.getMaxRowHeightItem(rowKey) || {};
+                row.calculatedHeight = Math.max(height, rowMaxHeight);
             }
         });
         this.clearBufferData(); // 清除缓存数据
         this.getData(); // 重新获取数据
-        this.ctx.emit('draw');
+        return true;
     }
     /**
      * 获取所有行数据（平铺）
@@ -234,24 +258,35 @@ export default class Database {
         recursiveData(this.data);
         return list;
     }
-    private filterColumns(columns: Column[]) {
-        return columns.reduce((acc: Column[], column) => {
-            // 检查当前列的 hide 属性
-            const shouldHide = typeof column.hide === 'function' ? column.hide() : column.hide;
-            // 如果当前列不应该隐藏，则添加到结果中
-            if (!shouldHide) {
-                const newColumn = { ...column }; // 复制当前列
-                // 递归处理子列
-                if (newColumn.children && Array.isArray(newColumn.children)) {
-                    newColumn.children = this.filterColumns(newColumn.children);
+    private generateColumns(columns: Column[]): Column[] {
+        const _generateColumns = (columns: Column[]): Column[] => {
+            return columns.map((column: Column) => {
+                const children =
+                    column.children && Array.isArray(column.children) ? _generateColumns(column.children) : undefined;
+                const dataMap = {
+                    hide: this.customHeader?.hideData?.[column.key],
+                    fixed: this.customHeader?.fixedData?.[column.key],
+                    sort: this.customHeader?.sortData?.[column.key],
+                    width: this.customHeader?.resizableData?.[column.key],
+                };
+                const obj: any = {};
+                for (const [key, value] of Object.entries(dataMap)) {
+                    if (value !== undefined) obj[key] = value;
                 }
-                acc.push(newColumn);
-            }
-            return acc;
-        }, []);
+                const allHide = children && children.every((item) => item.hide); // 所有子项都隐藏那父级也要隐藏
+                return {
+                    ...column,
+                    children,
+                    hide: allHide || (typeof column.hide === 'function' ? column.hide(column) : column.hide),
+                    ...obj,
+                };
+            });
+        };
+        return _generateColumns(columns);
     }
     getColumns() {
-        return this.filterColumns(this.columns);
+        const list = this.generateColumns(this.columns);
+        return list;
     }
     setColumns(columns: Column[]) {
         this.columns = columns;
@@ -715,7 +750,14 @@ export default class Database {
                 this.ctx.emit('validateChangedData', this.getChangedData());
             }
         });
-        this.ctx.emit('change', changeList, rows);
+        const changeListValid = changeList.map((item) => {
+            const errorTip = !!this.getValidationError(item.rowKey, item.key).length;
+            return {
+                ...item,
+                errorTip,
+            };
+        });
+        this.ctx.emit('change', changeListValid, rows);
         // 推历史记录
         if (history) {
             this.ctx.history.pushState({
@@ -920,28 +962,28 @@ export default class Database {
             // auto模式：子项全不选->父项不勾选，子项全选->父项勾选，子项都有->父项半选
             // 父项选中的情况点击清空父项选择和所有子项选择，其他情况点击父项，勾选父项和所有子项选择（递归）
             if (treeState.checked && !treeState.indeterminate) {
-                // 如果已全选，则取消选中
-                this.setRowSelection(rowKey, false, false);
                 // 递归取消所有子项
                 this.clearTreeSelectionRecursive(rowKey);
+                // 如果已全选，则取消选中
+                this.setRowSelection(rowKey, false, false);
             } else {
-                // 如果未选中或半选，则选中
-                this.setRowSelection(rowKey, true, false);
                 // 递归选中所有子项
                 this.selectTreeSelectionRecursive(rowKey);
+                // 如果未选中或半选，则选中
+                this.setRowSelection(rowKey, true, false);
             }
         } else if (mode === 'cautious') {
             // cautious模式：交互上相同，但是半选是不算在数据里面的
             if (treeState.checked && !treeState.indeterminate) {
-                // 如果已全选，则取消选中
-                this.setRowSelection(rowKey, false, false);
                 // 递归取消所有子项
                 this.clearTreeSelectionRecursive(rowKey);
+                // 如果已全选，则取消选中
+                this.setRowSelection(rowKey, false, false);
             } else {
-                // 如果未选中或半选，则选中
-                this.setRowSelection(rowKey, true, false);
                 // 递归选中所有子项
                 this.selectTreeSelectionRecursive(rowKey);
+                // 如果未选中或半选，则选中
+                this.setRowSelection(rowKey, true, false);
             }
         } else if (mode === 'strictly') {
             // strictly模式：父子各选各的互相不干扰，没有半选模式
@@ -961,7 +1003,7 @@ export default class Database {
     private selectTreeSelectionRecursive(rowKey: string) {
         const children = this.getTreeChildren(rowKey);
         children.forEach((childKey) => {
-            this.setRowSelection(childKey, true, false);
+            this.setRowSelectionByParent(childKey, true);
             this.selectTreeSelectionRecursive(childKey);
         });
     }
@@ -970,7 +1012,7 @@ export default class Database {
     private clearTreeSelectionRecursive(rowKey: string) {
         const children = this.getTreeChildren(rowKey);
         children.forEach((childKey) => {
-            this.setRowSelection(childKey, false, false);
+            this.setRowSelectionByParent(childKey, false);
             this.clearTreeSelectionRecursive(childKey);
         });
     }
@@ -1042,6 +1084,14 @@ export default class Database {
             this.bufferCheckState.buffer = false;
             this.ctx.emit('draw');
         }
+    }
+    setRowSelectionByParent(rowKey: string, check: boolean) {
+        const selection = this.selectionMap.get(rowKey);
+        if (!selection) {
+            return;
+        }
+        selection.check = check;
+        this.setRowSelectionByCheckboxKey(rowKey, selection.check);
     }
     getSelectionRows() {
         let rows: any[] = [];
@@ -1466,6 +1516,7 @@ export default class Database {
         this.headerMap.set(key, cellHeader);
         return true;
     }
+
     getReadonly(rowKey: string, key: string) {
         const { DISABLED } = this.ctx.config;
         // 禁用编辑
@@ -1503,11 +1554,18 @@ export default class Database {
         return this.validationErrorMap.size !== 0;
     }
     getValidator(rowKey: string, key: string) {
+        // 只读不验证
+        const readonly = this.ctx.database.getReadonly(rowKey, key);
+        if (readonly) {
+            return new Promise((resolve) => {
+                resolve([]);
+            });
+        }
         return new Promise((resolve) => {
             const row = this.rowKeyMap.get(rowKey);
             const colHeader = this.headerMap.get(key);
             const { BODY_CELL_RULES_METHOD } = this.ctx.config;
-            if (colHeader === undefined) {
+            if (row === undefined || colHeader === undefined) {
                 return resolve([]);
             }
             const column = colHeader.column;
@@ -1727,10 +1785,10 @@ export default class Database {
             dataList,
         };
     }
-    setValidationErrorByRowIndex(rowIndex: number, key: string, message: string) {
-        const rowKey = this.rowIndexRowKeyMap.get(rowIndex);
+    setValidationErrorByRowKey(rowKey: string, key: string, message: string) {
         const _key = `${rowKey}\u200b_${key}`;
-        const row = this.getRowForRowIndex(rowIndex);
+        const row = this.getRowForRowKey(rowKey);
+        const rowIndex = row?.rowIndex;
         const cellHeader = this.getColumnByKey(key);
         if (!rowKey || !cellHeader || !row) {
             return;
@@ -1767,13 +1825,13 @@ export default class Database {
         return this.validationErrorMap.get(_key) || [];
     }
     // 获取虚拟单元格,只针对可见的
-    getVirtualBodyCell(rowIndex: number, colIndex: number) {
+    getVirtualBodyCell(rowIndex: number, colIndex: number, isUpdate = true) {
         const column = this.getColumnByColIndex(colIndex);
         const row = this.getRowForRowIndex(rowIndex);
         if (!column || !row) {
             return;
         }
-        const cell = new Cell(this.ctx, rowIndex, colIndex, 0, 0, 0, 0, column, row.item, 'body');
+        const cell = new Cell(this.ctx, rowIndex, colIndex, 0, 0, 0, 0, column, row.item, 'body', isUpdate);
         return cell;
     }
     getVirtualBodyCellByKey(rowKey: string, key: string) {
@@ -1825,5 +1883,96 @@ export default class Database {
         const key = `${rowIndex}\u200b_${colIndex}`;
         const height = this.overlayerAutoHeightMap.get(key) || 0;
         return height;
+    }
+    setCustomHeader(customHeader: CustomHeader, ignoreEmit = false) {
+        (['fixedData', 'sortData', 'hideData', 'resizableData'] as (keyof CustomHeader)[]).forEach((key) => {
+            const value = customHeader[key];
+            if (value !== undefined) {
+                this.customHeader[key] = value as any;
+            }
+        });
+        if (!ignoreEmit) {
+            const obj = this.clearCustomHeaderInvalidValues(this.columns);
+            this.ctx.emit('customHeaderChange', obj);
+        }
+    }
+    resetCustomHeader() {
+        this.customHeader = {};
+        this.ctx.emit('resetHeader');
+        this.ctx.emit('customHeaderChange', this.customHeader);
+    }
+    getCustomHeader() {
+        return this.customHeader;
+    }
+    setCustomHeaderResizableData(key: string, width: number) {
+        // 统一设置方法
+        let { resizableData = {} } = this.customHeader;
+        resizableData[key] = width;
+        this.setCustomHeader({
+            resizableData,
+        });
+    }
+    setCustomHeaderHideData(keys: string[], hide: boolean) {
+        let { hideData = {} } = this.customHeader;
+        keys.forEach((key) => {
+            hideData[key] = hide;
+        });
+        this.setCustomHeader({
+            hideData,
+        });
+        this.ctx.emit('resetHeader');
+    }
+    setCustomHeaderFixedData(keys: string[], fixed: Fixed | '') {
+        let { fixedData = {} } = this.customHeader;
+        keys.forEach((key) => {
+            fixedData[key] = fixed;
+        });
+        this.setCustomHeader({
+            fixedData,
+        });
+        this.ctx.emit('resetHeader');
+    }
+    // 递归处理
+    clearCustomHeaderInvalidValues(columns: Column[]) {
+        const clearCustomHeaderInvalidValues = (columns: Column[], customHeader: CustomHeader = {}) => {
+            columns.forEach((column) => {
+                if (column.children && column.children.length > 0) {
+                    clearCustomHeaderInvalidValues(column.children, customHeader);
+                }
+                // 用一个小的 helper 函数，减少重复代码
+                const assignIfDifferent = (field: keyof CustomHeader, columnValue: any) => {
+                    const value = this.customHeader[field]?.[column.key];
+                    if (value !== undefined && value !== columnValue) {
+                        if (!customHeader[field]) {
+                            customHeader[field] = {} as any;
+                        }
+                        (customHeader[field] as any)[column.key] = value;
+                        // 如果固定源数据为空，则删除
+                        if (field === 'fixedData' && !value && !columnValue) {
+                            delete customHeader[field]?.[column.key];
+                        }
+                    }
+                };
+                assignIfDifferent('fixedData', column.fixed);
+                assignIfDifferent('sortData', column.sort);
+                assignIfDifferent('hideData', column.hide);
+                assignIfDifferent('resizableData', column.width);
+            });
+        };
+        let obj: CustomHeader = {};
+        clearCustomHeaderInvalidValues(columns, obj);
+        return obj;
+    }
+    setMaxRowHeightItem(rowKey: string, key: string, height: number) {
+        this.maxRowHeightCellMap.set(rowKey, {
+            key,
+            height,
+        });
+    }
+    getMaxRowHeightItem(rowKey: string) {
+        return this.maxRowHeightCellMap.get(rowKey);
+    }
+    clearChangeData() {
+        this.changedDataMap.clear();
     }
 }

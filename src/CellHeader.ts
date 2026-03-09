@@ -17,6 +17,7 @@ export default class CellHeader extends BaseCell {
     editorType: string;
     level: number;
     text: string;
+    hide: boolean = false;
     displayText: string = '';
     colspan: number;
     rowspan: number;
@@ -41,7 +42,7 @@ export default class CellHeader extends BaseCell {
     sortDescIconName = 'sort-desc';
     visibleWidth = 0;
     visibleHeight = 0;
-    maxLineClamp: LineClampType = 'auto';
+    maxLineClampHeader: LineClampType = 'auto';
     domDataset: any = {};
     drawTextX = 0;
     drawTextY = 0;
@@ -49,6 +50,7 @@ export default class CellHeader extends BaseCell {
     drawTextHeight = 0;
     drawCellBgColor = '';
     drawTextColor = '';
+    drawTextFont = '';
     drawSelectionImageX = 0;
     drawSelectionImageY = 0;
     drawSelectionImageWidth = 0;
@@ -75,13 +77,14 @@ export default class CellHeader extends BaseCell {
         this.key = column.key;
         this.minWidth = column.minWidth;
         this.maxWidth = column.maxWidth;
+        this.hide = (typeof column.hide === 'function' ? column.hide(column) : column.hide) || false;
         this.type = column.type || '';
         this.editorType = column.editorType || 'text';
         this.hideHeaderSelection = column.hideHeaderSelection || false;
         this.align = column.headerAlign || column.align || this.ctx.config.COLUMNS_ALIGN;
         this.verticalAlign =
             column.headerVerticalAlign || column.verticalAlign || this.ctx.config.COLUMNS_VERTICAL_ALIGN;
-        this.fixed = column.fixed;
+        this.fixed = column.fixed || '';
         this.level = column.level || 0;
         this.operation = column.operation || false;
         this.text = column.title;
@@ -99,6 +102,7 @@ export default class CellHeader extends BaseCell {
         this.overflowTooltipShow = column.overflowTooltipHeaderShow === false ? false : true;
         this.hasChildren = (column.children && column.children.length > 0) || false; // 是否有子
         this.render = column.renderHeader;
+        this.maxLineClampHeader = column.maxLineClampHeader || 'auto';
     }
     /**
      * 是否可见，覆盖基类方法，表头是跟y滚动条没有关系的所以不需要加滚动参数
@@ -122,7 +126,7 @@ export default class CellHeader extends BaseCell {
         let textColor = HEADER_TEXT_COLOR;
         if (typeof HEADER_CELL_STYLE_METHOD === 'function') {
             const headerCellStyleMethod: CellHeaderStyleMethod = HEADER_CELL_STYLE_METHOD;
-            const { backgroundColor, color } =
+            const { backgroundColor, color, font } =
                 headerCellStyleMethod({
                     colIndex: this.colIndex,
                     column: this.column,
@@ -134,6 +138,14 @@ export default class CellHeader extends BaseCell {
             if (color) {
                 textColor = color;
             }
+            if (font) {
+                this.drawTextFont = font;
+            }
+        }
+        // 高亮查找结果
+        const {colKey, type } = this.ctx.finderBar;
+        if ( type === 'header' && colKey === this.key) {
+            bgColor = this.ctx.config.FINDER_CELL_BG_COLOR;
         }
         this.drawCellBgColor = bgColor;
         this.drawTextColor = textColor;
@@ -153,7 +165,7 @@ export default class CellHeader extends BaseCell {
         this.drawEdge();
         this.drawSelection();
         this.drawText();
-        this.drawSelector();
+        this.drawBg();
         this.drawSortIcon();
     }
     private drawEdge() {
@@ -173,7 +185,7 @@ export default class CellHeader extends BaseCell {
             paint,
             config: { HEADER_FONT, CELL_PADDING, REQUIRED_COLOR },
         } = this.ctx;
-        const cacheTextKey = `${this.displayText}_${this.drawTextWidth}`;
+        const cacheTextKey = `${this.displayText}_${this.drawTextWidth}_${this.drawTextFont}`;
         this.ellipsis = paint.drawText(
             this.displayText,
             this.drawTextX,
@@ -181,12 +193,12 @@ export default class CellHeader extends BaseCell {
             this.drawTextWidth,
             this.drawTextHeight,
             {
-                font: HEADER_FONT,
+                font: this.drawTextFont || HEADER_FONT,
                 padding: CELL_PADDING,
                 color: this.drawTextColor,
                 align: this.align,
                 verticalAlign: this.verticalAlign,
-                maxLineClamp: this.maxLineClamp,
+                maxLineClamp: this.maxLineClampHeader,
                 offsetRight: (this.column.sortBy || this.column.apiSortable) ? 16 : 0, // 排序图标占位
                 offsetLeft: this.required ? 12 : 0, // 必填星号占位
                 cacheTextKey,
@@ -209,15 +221,26 @@ export default class CellHeader extends BaseCell {
             },
         );
     }
-    private drawSelector() {
-        // 选择区背景颜色
-        const { ENABLE_SELECTOR } = this.ctx.config;
-        if (!ENABLE_SELECTOR) {
+    private drawBg() {
+        if (this.ctx.dragHeaderIng) {
             return;
         }
-        const { xArr } = this.ctx.selector;
-        const [minX, maxX] = xArr;
-        if (this.colIndex >= minX && this.colIndex <= maxX) {
+        // 选择区背景颜色
+        const { ENABLE_SELECTOR, ENABLE_SELECTOR_SINGLE } = this.ctx.config;
+        let minX = -1;
+        let maxX = -1;
+        if (this.ctx.focusCellHeader) {
+            minX = this.ctx.focusCellHeader.colIndex;
+            maxX = this.ctx.focusCellHeader.colIndex + this.ctx.focusCellHeader.colspan - 1;
+        }
+        // 启用选择器且不是单选
+        if (ENABLE_SELECTOR && !ENABLE_SELECTOR_SINGLE) {
+            const { xArr } = this.ctx.selector;
+            minX = xArr[0];
+            maxX = xArr[1];
+        }
+        const colSpanMaxIndex = this.colspan + this.colIndex - 1;
+        if (this.colIndex >= minX && this.colIndex <= maxX && colSpanMaxIndex <= maxX) {
             this.ctx.paint.drawRect(this.drawX, this.drawY, this.width, this.height, {
                 borderColor: 'transparent',
                 fillColor: this.ctx.config.SELECT_ROW_COL_BG_COLOR || 'transparent',

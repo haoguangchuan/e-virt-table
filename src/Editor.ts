@@ -28,8 +28,10 @@ export default class Editor {
         });
         this.ctx.on('moveFocus', (cell) => {
             this.cellTarget = cell;
+            this.resetEditorStyle();
             const { xArr, yArr } = this.ctx.selector;
             this.selectorArrStr = JSON.stringify(xArr) + JSON.stringify(yArr);
+            this.focusInput();
         });
         // 滚动时，结束编辑
         this.ctx.on('onScroll', () => {
@@ -37,17 +39,7 @@ export default class Editor {
                 this.doneEdit();
             }
         });
-        this.ctx.on('cellHeaderMousedown', () => {
-            if (this.enable) {
-                this.doneEdit();
-            }
-            this.cellTarget = null;
-        });
         this.ctx.on('hoverIconClick', (cell) => {
-            // 没有编辑器就不进入编辑模式
-            if (cell.editorType === 'none') {
-                return;
-            }
             this.editCell(cell.rowIndex, cell.colIndex);
         });
         this.ctx.on('keydown', (e) => {
@@ -56,6 +48,16 @@ export default class Editor {
             }
             if (!this.ctx.focusCell) {
                 return;
+            }
+            if (this.ctx.finding) {
+                return;
+            }
+            // 如果是多选不能输入任何字符, 如果输入框聚焦，则进入编辑模式
+            const { focusCell } = this.ctx;
+            const isVisible = focusCell.isVerticalVisible() && focusCell.isHorizontalVisible();
+            if (!isVisible) {
+                // 滚动到焦点单元格
+                this.ctx.emit('scrollToIndex', focusCell.rowIndex, focusCell.colIndex);
             }
             if (e.code === 'Escape' && this.ctx.editing) {
                 this.cancel = true;
@@ -67,7 +69,7 @@ export default class Editor {
                 this.doneEdit();
                 return;
             }
-            if ((e.altKey || e.metaKey) && (e.code === 'Enter' || e.code === 'NumpadEnter') && this.ctx.editing && this.inputEl) {
+            if ((e.altKey || e.metaKey) && e.key === 'Enter' && this.ctx.editing && this.inputEl) {
                 e.preventDefault();
                 const cursorPos = this.inputEl.selectionStart; // 获取光标位置
                 const textBefore = this.inputEl.value.substring(0, cursorPos); // 光标前的文本
@@ -89,7 +91,7 @@ export default class Editor {
                 this.ctx.emit('setMoveFocus', 'RIGHT');
                 return;
             }
-            if ((e.code === 'Enter' || e.code === 'NumpadEnter') && this.ctx.editing) {
+            if (e.key === 'Enter' && this.ctx.editing) {
                 e.preventDefault();
                 this.doneEdit();
                 if (e.shiftKey) {
@@ -99,7 +101,7 @@ export default class Editor {
                 this.ctx.emit('setMoveFocus', 'BOTTOM');
                 return;
             }
-            if ((e.code === 'Enter' || e.code === 'NumpadEnter') && !this.ctx.editing) {
+            if (e.key === 'Enter' && !this.ctx.editing) {
                 e.preventDefault();
                 this.startEdit();
                 return;
@@ -145,15 +147,17 @@ export default class Editor {
             if (functionKeys.includes(key)) {
                 return;
             }
-            // 除了上面的建其他都开始编辑
+            const isFocus = document.activeElement === this.inputEl;
+            if (!this.ctx.selectOnlyOne || !isFocus) {
+                e.preventDefault();
+                // 终止输入事件
+                this.inputEl.blur();
+                return;
+            }
             this.startEdit(true);
         });
         // 重绘可能会导致cellClick事件不能触发，调整用按下cellMouseup按下延时赋值cellTarget
-        this.ctx.on('cellMouseup', (cell: Cell) => {
-            // 如果是调整边界位置，不进入编辑模式
-            if (this.ctx.adjustPositioning) {
-                return;
-            }
+        this.ctx.on('cellClick', (cell: Cell) => {
             // 如果是选择器，不进入编辑模式
             if (this.ctx.isPointer) {
                 return;
@@ -164,6 +168,8 @@ export default class Editor {
             }
             const { xArr, yArr } = this.ctx.selector;
             const selectorArrStr = JSON.stringify(xArr) + JSON.stringify(yArr);
+            // 只有文本类型才能聚焦
+            this.focusInput();
             if (this.selectorArrStr === selectorArrStr && this.cellTarget) {
                 // 启用合并单元格关联&&只有合并单元格时才进入编辑模式
                 if (this.ctx.config.ENABLE_MERGE_CELL_LINK && this.ctx.onlyMergeCell) {
@@ -183,6 +189,7 @@ export default class Editor {
             this.selectorArrStr = selectorArrStr;
             this.doneEdit();
             this.cellTarget = cell;
+            this.resetEditorStyle();
             // 单击单元格进入编辑模式
             if (this.ctx.config.ENABLE_EDIT_SINGLE_CLICK) {
                 // 启用合并单元格关联&&只有合并单元格时才进入编辑模式
@@ -218,18 +225,28 @@ export default class Editor {
     private initTextEditor() {
         // 初始化文本编辑器
         this.inputEl = document.createElement('textarea');
+        this.inputEl.id = 'e-virt-table-editor-textarea';
         this.inputEl.setAttribute('rows', '1');
+        this.inputEl.setAttribute('tabindex', '-1');
         // 监听输入事件，自动调整高度
         this.inputEl.addEventListener('input', this.autoSize.bind(this));
-        this.inputEl.addEventListener('blur', () => {
-            this.doneEdit();
-        });
         this.editorEl = this.ctx.editorElement;
         this.inputEl.className = 'e-virt-table-editor-textarea';
         this.editorEl.appendChild(this.inputEl);
         this.ctx.containerElement.appendChild(this.editorEl);
     }
     private autoSize() {
+        if (!this.ctx.editing) {
+            return;
+        }
+        // 针对数字类型提示错误信息
+        const value = this.inputEl.value;
+        if (this.cellTarget && this.cellTarget.type === 'number' && value !== '') {
+            this.ctx.emit('cellHideTooltip');
+            if (!/^-?\d+(\.\d+)?$/.test(value)) {
+                this.ctx.emit('cellShowTooltip', this.cellTarget, this.ctx.config.NUMBER_ERROR_TIP);
+            }
+        }
         this.inputEl.style.height = 'auto'; // 重置高度
         let scrollHeight = this.inputEl.scrollHeight;
         let maxHeight = this.ctx.body.visibleHeight;
@@ -257,6 +274,10 @@ export default class Editor {
     private startEditByInput(cell: Cell, ignoreValue = false) {
         const value = ignoreValue ? null : cell.getValue();
         const { editorType } = cell;
+        // 没有编辑器的情况下不进入编辑模式
+        if (editorType === 'none') {
+            return;
+        }
         cell.update(); // 更新单元格信息
         if (this.ctx.config.ENABLE_MERGE_CELL_LINK) {
             cell.updateSpanInfo(); // 更新合并单元格信息
@@ -273,27 +294,32 @@ export default class Editor {
             height = maxHeight;
         }
         // 显示编辑器
-        this.editorEl.style.display = 'inline-block';
+        this.editorEl.style.zIndex = '100';
         this.editorEl.style.left = `${this.drawX - 1}px`;
-        this.editorEl.style.top = `${this.drawY - 1}px`;
+        this.editorEl.style.top = `${this.drawY}px`;
         this.editorEl.style.bottom = `auto`;
+        this.editorEl.style.maxWidth = 'none';
         this.editorEl.style.maxHeight = `${maxHeight}px`;
-        if (editorType === 'text') {
-            this.inputEl.style.display = 'block';
+        if (['text'].includes(editorType)) {
+            this.inputEl.style.opacity = '1';
+            this.inputEl.style.position = 'relative';
             this.inputEl.style.minWidth = `${width - 1}px`;
             this.inputEl.style.minHeight = `${height - 1}px`;
             this.inputEl.style.maxHeight = `${maxHeight}px`;
-            this.inputEl.style.width = `${width - 1}px`;
+            this.inputEl.style.width = `${width}px`;
             this.inputEl.style.height = `auto`;
             this.inputEl.style.padding = `${CELL_PADDING}px`;
+            this.inputEl.value = ''; // 清空
             if (value !== null) {
                 this.inputEl.value = value;
             }
-            this.inputEl.focus({ preventScroll: true });
-            const length = this.inputEl.value.length;
-            this.inputEl.setSelectionRange(length, length);
         } else {
-            this.inputEl.style.display = 'none';
+            this.inputEl.style.opacity = '0';
+            this.inputEl.style.width = '1px';
+            this.inputEl.style.height = '1px';
+            this.inputEl.style.position = 'absolute';
+            this.inputEl.style.left = '0px';
+            this.inputEl.style.top = '0px';
         }
 
         if (this.inputEl.scrollHeight > height || this.drawY < header.height) {
@@ -314,7 +340,11 @@ export default class Editor {
                 this.ctx.setItemValueByEditor(rowKey, key, textContent, true);
                 // this.cellTarget.setValue(textContent);
             }
-            this.inputEl.value = '';
+        }
+    }
+    private focusInput() {
+        if (this.ctx.selectOnlyOne && document.activeElement !== this.inputEl) {
+            this.inputEl.focus({ preventScroll: true });
         }
     }
     startEdit(ignoreValue = false) {
@@ -336,18 +366,13 @@ export default class Editor {
         if (this.enable) {
             return;
         }
-        // 触发绘制，刷新
-        // this.ctx.emit('drawView');
         // 可视区可见
         const isVisible = focusCell.isVerticalVisible() && focusCell.isHorizontalVisible();
         if (!isVisible) {
             return;
         }
-        const { rowKey, key, editorType } = focusCell;
-        // 没有编辑器的情况下不进入编辑模式
-        if (editorType === 'none') {
-            return;
-        }
+        const { rowKey, key } = focusCell;
+
         const readonly = this.ctx.database.getReadonly(rowKey, key);
         if (focusCell && !readonly) {
             this.enable = true;
@@ -355,6 +380,8 @@ export default class Editor {
             this.cellTarget = focusCell;
             this.startEditByInput(this.cellTarget, ignoreValue);
             this.ctx.emit('startEdit', this.cellTarget);
+            // 触发绘制，刷新
+            this.ctx.emit('draw');
         }
     }
     editCell(rowIndex: number, colIndex: number) {
@@ -386,6 +413,8 @@ export default class Editor {
             this.cellTarget = focusCell;
             this.startEditByInput(this.cellTarget);
             this.ctx.emit('startEdit', this.cellTarget);
+            // 触发绘制，刷新
+            this.ctx.emit('draw');
         }
     }
     doneEdit() {
@@ -393,13 +422,27 @@ export default class Editor {
             return;
         }
         this.doneEditByInput();
+        this.ctx.emit('cellHideTooltip');
         this.ctx.emit('doneEdit', this.cellTarget);
         this.enable = false;
         this.ctx.editing = false;
-        this.ctx.containerElement.focus({ preventScroll: true });
-        // 隐藏编辑器
-        this.editorEl.style.display = 'none';
+        this.resetEditorStyle();
+        // 聚焦输入框,防止非文本类型无法聚焦
+        setTimeout(() => {
+            this.focusInput();
+        }, 0);
         this.ctx.emit('draw');
+    }
+    private resetEditorStyle() {
+        const cell = this.cellTarget;
+        if (!cell) {
+            return;
+        }
+        this.editorEl.style.left = `${cell.drawX}px`;
+        this.editorEl.style.top = `${cell.drawY}px`;
+        this.editorEl.style.maxWidth = `1px`;
+        this.editorEl.style.maxHeight = `1px`;
+        this.editorEl.style.zIndex = '-1';
     }
     clearEditor() {
         this.doneEdit();
@@ -407,6 +450,7 @@ export default class Editor {
         this.selectorArrStr = '';
         this.ctx.clearSelector();
         this.ctx.focusCell = undefined;
+        this.inputEl.blur();
         this.ctx.emit('draw');
     }
     destroy() {

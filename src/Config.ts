@@ -32,8 +32,6 @@ export default class Config {
     private _config: ConfigType = {};
     /** CSS 类名前缀 */
     CSS_PREFIX = 'e-virt-table';
-    /** 绘制时间 */
-    DRAW_TIME_MULTIPLIER = 2;
     /** 图标集合 */
     ICONS: IconType[] = [];
     /** 行的唯一标识键 */
@@ -52,10 +50,6 @@ export default class Config {
     STRIPE_COLOR = '#fafafa';
     /** 区域边框颜色 */
     BORDER_COLOR = '#e1e6eb';
-    /** 宽度为 0 表示自适应100% */
-    WIDTH = 0;
-    /** 最小可调整宽度 */
-    RESIZE_MIN_WIDTH = 40;
     /** 高度，为 0 表示自适应 */
     HEIGHT = 0;
     /** 占位文本颜色 */
@@ -64,6 +58,8 @@ export default class Config {
     EMPTY_BODY_HEIGHT = 120;
     /** 自定义空样式 */
     EMPTY_CUSTOM_STYLE: Partial<CSSStyleDeclaration> = {};
+    /** 数字类型错误提示 */
+    NUMBER_ERROR_TIP = '只允许输入数字';
     /** 空数据文本 */
     EMPTY_TEXT = '暂无数据';
     /** 加载文本 */
@@ -152,6 +148,10 @@ export default class Config {
     CHECKBOX_KEY = '';
     /** 选择框颜色 */
     CHECKBOX_COLOR = 'rgb(82,146,247)';
+    /** 查找结果当前行颜色 */
+    FINDER_CELL_BG_COLOR = 'rgb(255,229,144)';
+    /** 启用查找 */
+    ENABLE_FINDER = true;
     /** 选择框大小 */
     CHECKBOX_SIZE = 20;
     /** 选择框禁用图标 */
@@ -206,6 +206,8 @@ export default class Config {
     ENABLE_SELECTOR = true;
     /** 树形选择模式 */
     TREE_SELECT_MODE: TreeSelectMode = 'auto';
+    /** 树形子项key名称 */
+    TREE_CHILDREN_KEY = 'children';
     /** 树形缩进宽度 */
     TREE_INDENT = 20;
     /** 树形图标大小 */
@@ -248,8 +250,14 @@ export default class Config {
     ENABLE_MERGE_CELL_LINK = false;
     /** 启用填充器 */
     ENABLE_AUTOFILL = false;
-    /** 启用右键菜单 */
+    /** 启用选择器-批量跨列选择 */
+    ENABLE_AUTOFILL_SPAN_COL = true;
+    /** 启用选择器-批量跨行选择 */
+    ENABLE_AUTOFILL_SPAN_ROW = true;
+    /** 启用body右键菜单 */
     ENABLE_CONTEXT_MENU = false;
+    /** 启用表头右键菜单 */
+    ENABLE_HEADER_CONTEXT_MENU = false;
     /** 启用复制 */
     ENABLE_COPY = true;
     /** 启用粘贴 */
@@ -262,10 +270,21 @@ export default class Config {
     RESIZE_ROW_LINE_COLOR = '#e1e6eb';
     /** 列调整线颜色 */
     RESIZE_COLUMN_LINE_COLOR = '#e1e6eb';
+    /** 启用列调整文本 */
+    ENABLE_RESIZE_COLUMN_TEXT = true;
+    /** 列调整线颜色 */
+    RESIZE_COLUMN_TEXT_COLOR = '#fff';
+    /** 列调整线文本背景色 */
+    RESIZE_COLUMN_TEXT_BG_COLOR = 'rgb(82,146,247)';
     /** 最小调整行高 */
     RESIZE_ROW_MIN_HEIGHT = 36;
     /** 列宽最小值 */
     RESIZE_COLUMN_MIN_WIDTH = 40;
+    /** 拖拽提示背景色 */
+    DRAG_TIP_BG_COLOR = 'rgba(82,146,247,0.1)';
+    /** 拖拽提示线颜色 */
+    DRAG_TIP_LINE_COLOR = 'rgb(82,146,247)';
+    /** 拖拽提示文本颜色 */
     /** 启用键盘 */
     ENABLE_KEYBOARD = true;
     /** 启用历史 */
@@ -296,10 +315,25 @@ export default class Config {
         { label: '粘贴', value: 'paste' },
         { label: '清空选中内容', value: 'clearSelected' },
     ];
+    CUSTOM_BODY_CONTEXT_MENU: MenuItem[] = [];
+    HEADER_CONTEXT_MENU: MenuItem[] = [
+        { label: '左固定', value: 'fixedLeft' },
+        { label: '右固定', value: 'fixedRight' },
+        { label: '取消固定', value: 'fixedNone' },
+        { label: '隐藏', value: 'hide' },
+        {
+            label: '显示',
+            value: 'visible',
+        },
+        { label: '恢复默认', value: 'resetHeader' },
+    ];
+    CUSTOM_HEADER_CONTEXT_MENU: MenuItem[] = [];
     /** 格子多行文本行高,isAutoRowHeight才会生效 */
     CELL_LINE_HEIGHT = 1.3;
     /** 全局自动行高 */
     AUTO_ROW_HEIGHT = false;
+    /** 启用拖拽表头 */
+    ENABLE_DRAG_COLUMN = false;
     /** header 格子样式 */
     HEADER_CELL_STYLE_METHOD?: CellHeaderStyleMethod;
     /** body 格子样式 */
