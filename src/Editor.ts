@@ -165,6 +165,15 @@ export default class Editor {
             if (!this.isInSelectorRange(cell.rowIndex, cell.colIndex)) {
                 return;
             }
+            // 已在当前单元格编辑时，mouseup 不应结束编辑（否则双击/再次点击会立刻 blur 关闭）
+            if (
+                this.enable &&
+                this.cellTarget &&
+                cell.rowKey === this.cellTarget.rowKey &&
+                cell.key === this.cellTarget.key
+            ) {
+                return;
+            }
             const { xArr, yArr } = this.ctx.selector;
             const selectorArrStr = JSON.stringify(xArr) + JSON.stringify(yArr);
             if (this.selectorArrStr === selectorArrStr && this.cellTarget) {

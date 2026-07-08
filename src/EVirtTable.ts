@@ -152,6 +152,14 @@ export default class EVirtTable {
         this.contextMenu.updated();
         this.ctx.emit('draw');
     }
+    /** 仅合并配置并重绘，不重建 database（切换浏览/编辑模式等场景） */
+    patchConfig(_config: ConfigType) {
+        this.ctx.config.init(_config);
+        if (_config.DISABLED) {
+            this.editor.clearEditor();
+        }
+        this.ctx.emit('draw');
+    }
     loadColumns(columns: Column[]) {
         // 先关闭编辑
         this.editor.doneEdit();

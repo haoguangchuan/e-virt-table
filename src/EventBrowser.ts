@@ -59,7 +59,10 @@ export default class EventBrowser {
         if (_e.button === 0) {
             this.ctx.mousedown = true;
         }
-        this.ctx.containerElement.focus({ preventScroll: true });
+        // 编辑中勿把焦点抢回容器，否则 textarea blur 会触发 doneEdit
+        if (!this.ctx.editing) {
+            this.ctx.containerElement.focus({ preventScroll: true });
+        }
         this.ctx.emit('mousedown', e);
     }
     private handleMousemove(e: Event) {
