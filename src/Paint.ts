@@ -311,7 +311,12 @@ export class Paint {
         }
         // 文字信息回调，用于画跟随图标的
         if (options.textCallback && lines.length) {
-            const textMaxWidth = Math.round(this.ctx.measureText(lines[0]).width);
+            // 多行时取最宽行，避免仅按首行宽度定位导致后续行与图标重叠
+            let textMaxWidth = 0;
+            for (let i = 0; i < totalTextLine; i++) {
+                const lineWidth = Math.round(this.ctx.measureText(lines[i] || '').width);
+                if (lineWidth > textMaxWidth) textMaxWidth = lineWidth;
+            }
             let left = startX;
             let right = startX + textMaxWidth;
             if (align === 'center') {
