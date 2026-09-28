@@ -65,6 +65,8 @@ export default class EventBrowser {
         if (_e.button === 0) {
             this.ctx.mousedown = true;
         }
+        // 不在此处抢焦点到 container：选中态需把焦点留在隐藏 textarea，
+        // 否则中文等 IME 首键会在 startEdit 聚焦前以英文字符落入单元格。
         this.ctx.emit('mousedown', e);
     }
     private handleMousemove(e: Event) {

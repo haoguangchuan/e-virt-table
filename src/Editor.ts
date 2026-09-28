@@ -30,7 +30,8 @@ export default class Editor {
             this.resetEditorStyle();
             const { xArr, yArr } = this.ctx.selector;
             this.selectorArrStr = JSON.stringify(xArr) + JSON.stringify(yArr);
-            this.focusInput();
+            // 仅文本格预聚焦：自定义编辑器（number/date/...）需把焦点交给外部组件
+            this.prepareFocusForCell(cell);
         });
         // 滚动时，结束编辑
         this.ctx.on('onScroll', () => {
@@ -63,7 +64,9 @@ export default class Editor {
                 this.doneEdit();
                 return;
             }
-            if ((e.altKey || e.metaKey) && e.key === 'Enter' && this.ctx.editing && this.inputEl) {
+            // 判断是回车（包含数字键盘的回车）
+            const isEnter = e.code === 'Enter' || e.code === 'NumpadEnter';
+            if ((e.altKey || e.metaKey) && isEnter && this.ctx.editing && this.inputEl) {
                 e.preventDefault();
                 const cursorPos = this.inputEl.selectionStart; // 获取光标位置
                 const textBefore = this.inputEl.value.substring(0, cursorPos); // 光标前的文本
@@ -85,7 +88,7 @@ export default class Editor {
                 this.ctx.emit('setMoveFocus', 'RIGHT');
                 return;
             }
-            if (e.key === 'Enter' && this.ctx.editing) {
+            if (isEnter && this.ctx.editing) {
                 e.preventDefault();
                 this.doneEdit();
                 if (e.shiftKey) {
@@ -95,7 +98,7 @@ export default class Editor {
                 this.ctx.emit('setMoveFocus', 'BOTTOM');
                 return;
             }
-            if (e.key === 'Enter' && !this.ctx.editing) {
+            if (isEnter && !this.ctx.editing) {
                 e.preventDefault();
                 this.startEdit();
                 return;
@@ -112,6 +115,7 @@ export default class Editor {
             // 检测功能键（比如 F1, Escape,Tab 等）
             const functionKeys = [
                 'Enter',
+                'NumpadEnter',
                 'CapsLock',
                 'Escape',
                 'Tab',
@@ -142,12 +146,22 @@ export default class Editor {
             if (functionKeys.includes(key)) {
                 return;
             }
+            // 已在编辑中：把按键交给当前编辑器（textarea / 扩展输入框）
+            if (this.enable || this.ctx.editing) {
+                return;
+            }
+            // IME：选中态焦点必须已在 textarea，否则首键会以拉丁字符插入
             const isFocus = document.activeElement === this.inputEl;
             if (!isFocus && focusCell.editorType === 'text') {
                 e.preventDefault();
+                this.focusInput();
                 return;
             }
-            this.startEdit(true);
+            // 扩展编辑器（number 等）：吞掉首键并作为覆盖初值，与文本 ignoreValue 对齐
+            if (focusCell.editorType !== 'text') {
+                e.preventDefault();
+            }
+            this.startEdit(true, key);
         });
         // 重绘可能会导致cellClick事件不能触发，调整用按下cellMouseup按下延时赋值cellTarget
         this.ctx.on('cellClick', (cell: Cell) => {
@@ -182,6 +196,11 @@ export default class Editor {
             this.doneEdit();
             this.cellTarget = cell;
             this.resetEditorStyle();
+            // 选中后仅对文本格预聚焦隐藏 textarea，保证 IME 首键可组合；
+            // number 等扩展编辑器若预聚焦会吞键并在外部 focus 时被 blur→doneEdit 关掉
+            if (this.ctx.selectOnlyOne) {
+                this.prepareFocusForCell(cell);
+            }
             // 单击单元格进入编辑模式
             if (this.ctx.config.ENABLE_EDIT_SINGLE_CLICK) {
                 // 启用合并单元格关联&&只有合并单元格时才进入编辑模式
@@ -228,6 +247,12 @@ export default class Editor {
         this.inputEl.setAttribute('tabindex', '-1');
         // 监听输入事件，自动调整高度
         this.inputEl.addEventListener('input', this.autoSize.bind(this));
+        this.inputEl.addEventListener('blur', () => {
+            // 仅编辑中结束；选中态预聚焦的隐藏输入被抢焦时不应清选区
+            if (this.enable) {
+                this.doneEdit();
+            }
+        });
         this.editorEl = this.ctx.editorElement;
         this.inputEl.className = 'e-virt-table-editor-textarea';
         this.editorEl.appendChild(this.inputEl);
@@ -311,9 +336,16 @@ export default class Editor {
             this.inputEl.style.width = this.ctx.toVisualPx(width);
             this.inputEl.style.height = `auto`;
             this.inputEl.style.padding = this.ctx.toVisualPx(CELL_PADDING);
-            this.inputEl.value = ''; // 清空
+            // 已预聚焦时不清空当前组合中的内容；仅在带入单元格值时覆盖
             if (value !== null) {
                 this.inputEl.value = value;
+            } else if (document.activeElement !== this.inputEl) {
+                this.inputEl.value = '';
+            }
+            this.focusInput();
+            if (value !== null) {
+                const length = this.inputEl.value.length;
+                this.inputEl.setSelectionRange(length, length);
             }
             if (this.ctx.toLogical(this.inputEl.scrollHeight) > height || this.drawY < header.height) {
                 this.autoSize();
@@ -348,7 +380,19 @@ export default class Editor {
             this.inputEl.focus({ preventScroll: true });
         }
     }
-    startEdit(ignoreValue = false) {
+    /** 文本格：预聚焦隐藏输入以支持 IME；其它类型：焦点回容器，避免吞键/打断扩展编辑器 */
+    private prepareFocusForCell(cell: Cell | null | undefined) {
+        if (cell?.editorType === 'text') {
+            this.focusInput();
+            return;
+        }
+        this.inputEl.value = '';
+        if (document.activeElement === this.inputEl) {
+            this.inputEl.blur();
+        }
+        this.ctx.containerElement.focus({ preventScroll: true });
+    }
+    startEdit(ignoreValue = false, initialInput?: string) {
         if (this.isTextSelectionActive()) {
             return;
         }
@@ -368,9 +412,9 @@ export default class Editor {
             // 滚动到焦点单元格
             this.ctx.emit('scrollToIndex', focusCell.rowIndex, focusCell.colIndex);
         }
-        this.editCell(focusCell.rowIndex, focusCell.colIndex, ignoreValue);
+        this.editCell(focusCell.rowIndex, focusCell.colIndex, ignoreValue, initialInput);
     }
-    editCell(rowIndex: number, colIndex: number, ignoreValue = false) {
+    editCell(rowIndex: number, colIndex: number, ignoreValue = false, initialInput?: string) {
         // 直接从renderRows中获取cell，防止focusCell不是最新的
         const row = this.ctx.body.renderRows.find((row) => row.rowIndex === rowIndex);
         if (!row) {
@@ -397,14 +441,22 @@ export default class Editor {
         if (this.enable) {
             return;
         }
-        const { rowKey, key } = focusCell;
+        const { rowKey, key, editorType } = focusCell;
+        // 没有编辑器的情况下不进入编辑模式
+        if (editorType === 'none') {
+            return;
+        }
         const readonly = this.ctx.database.getReadonly(rowKey, key);
         if (focusCell && !readonly) {
             this.enable = true;
             this.ctx.editing = true;
             this.cellTarget = focusCell;
             this.startEditByInput(this.cellTarget, ignoreValue);
-            this.ctx.emit('startEdit', this.cellTarget);
+            // ignoreValue：键盘打字激活，覆盖原值；initialInput 为首键（扩展编辑器使用）
+            this.ctx.emit('startEdit', this.cellTarget, {
+                ignoreValue: !!ignoreValue,
+                initialInput: ignoreValue ? initialInput : undefined,
+            });
             // 触发绘制，刷新
             this.ctx.emit('draw');
         }
@@ -419,10 +471,8 @@ export default class Editor {
         this.enable = false;
         this.ctx.editing = false;
         this.resetEditorStyle();
-        // 聚焦输入框,防止非文本类型无法聚焦
-        setTimeout(() => {
-            this.focusInput();
-        }, 0);
+        // 文本格结束编辑后仍聚焦隐藏输入，便于继续 IME；其它类型交还容器焦点
+        this.prepareFocusForCell(this.cellTarget);
         this.ctx.emit('draw');
     }
     private resetEditorStyle() {

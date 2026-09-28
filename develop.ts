@@ -1113,7 +1113,9 @@ document.getElementById('setValidator')?.addEventListener('click', () => {
     ];
     eVirtTable.setValidations(errors);
 });
+let resize = true
 document.getElementById('setConfig')?.addEventListener('click', () => {
+    resize = !resize
     eVirtTable.loadConfig({
         CELL_HEIGHT: 40,
         ENABLE_AUTOFILL: true,
@@ -1125,6 +1127,7 @@ document.getElementById('setConfig')?.addEventListener('click', () => {
         HIGHLIGHT_HOVER_ROW: true,
         OFFSET_HEIGHT: 16,
         ENABLE_CONTEXT_MENU: false,
+        ENABLE_RESIZE_COLUMN: resize,
         CONTEXT_MENU: [
             { label: '复制', value: 'copy' },
             { label: '剪切', value: 'cut' },

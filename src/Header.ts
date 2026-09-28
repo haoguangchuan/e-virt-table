@@ -46,6 +46,7 @@ export default class Header {
         this.init();
         this.initSelection();
         this.initSort();
+        this.initHoverIcon();
         // 初始化调整列大小ENABLE_RESIZE_COLUMN
         this.initResizeColumn();
         this.initDragColumn();
@@ -116,23 +117,40 @@ export default class Header {
         this.ctx.header.allCellHeaders = this.allCellHeaders;
         this.ctx.header.visibleWidth = this.visibleWidth;
         this.ctx.header.visibleHeight = this.visibleHeight;
+        // loadColumns/loadData 会重建 CellHeader；清掉悬停引用并立即同步 render 列表，
+        // 避免仍指向旧实例或等待 RAF 期间 hover 命中失效
+        this.ctx.hoverCellHeader = undefined;
+        this.ctx.hoverHeaderIconKey = undefined;
+        this.update();
     }
     private initSort() {
         this.ctx.on('cellHeaderClick', (cellHeader, e) => {
             if (!cellHeader.isImageInside('sort', e)) {
                 return;
             }
-            const currentState = this.ctx.database.getSortState(cellHeader.key);
             let newDirection: 'asc' | 'desc' | 'none';
             // 按照 不排序->升序->降序->不排序 的顺序循环
-            if (currentState.direction === 'none') {
-                newDirection = 'asc';
-            } else if (currentState.direction === 'asc') {
-                newDirection = 'desc';
+            if (cellHeader.column.apiSortable) {
+                const currentState = this.ctx.database.getBackendSortState(cellHeader.key);
+                if (currentState.direction === 'none') {
+                    newDirection = 'asc';
+                } else if (currentState.direction === 'asc') {
+                    newDirection = 'desc';
+                } else {
+                    newDirection = 'none';
+                }
+                this.ctx.database.setBackendSortState(cellHeader.key, newDirection);
             } else {
-                newDirection = 'none';
+                const currentState = this.ctx.database.getSortState(cellHeader.key);
+                if (currentState.direction === 'none') {
+                    newDirection = 'asc';
+                } else if (currentState.direction === 'asc') {
+                    newDirection = 'desc';
+                } else {
+                    newDirection = 'none';
+                }
+                this.ctx.database.setSortState(cellHeader.key, newDirection);
             }
-            this.ctx.database.setSortState(cellHeader.key, newDirection);
         });
     }
     private initSelection() {
@@ -149,6 +167,14 @@ export default class Header {
             } else if (image.name === 'checkbox-check') {
                 this.ctx.database.clearSelection(true);
             }
+        });
+    }
+    private initHoverIcon() {
+        this.ctx.on('cellHeaderClick', (cellHeader, e) => {
+            if (!cellHeader.isImageInside('hover', e)) {
+                return;
+            }
+            this.ctx.emit('headerHoverIconClick', cellHeader, e);
         });
     }
     // 调整表头的宽度

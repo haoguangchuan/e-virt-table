@@ -593,3 +593,9 @@ V1.0.1
 - 娣诲姞footer鍙浐瀹氬琛ㄥご涓嬫柟
 
 ---
+V1.2.33
+### Feature
+- 表头支持悬停图标：`headerHoverIconName` / `HEADER_CELL_HOVER_ICON_METHOD`，点击触发 `headerHoverIconClick`
+- 内置 `icon-setting` 图标
+
+---

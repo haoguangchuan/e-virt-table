@@ -139,6 +139,8 @@ export default class Context {
     hoverCellHeader?: CellHeader;
     mouseX = 0;
     mouseY = 0;
+    /** 表头悬停配置图标当前所在列 key（用于图标 hover 高亮） */
+    hoverHeaderIconKey?: string;
     body: BodyOptions = {
         x: 0,
         y: 0,

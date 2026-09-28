@@ -197,6 +197,7 @@ type EVirtTableOptions = {
 | mousemove                 | mousemove回调                                                            | —                                                 |
 | keydown                   | keydown回调                                                              | —                                                 |
 | hoverIconClick            | hoverIcon点击回调                                                        | —                                                 |
+| headerHoverIconClick      | 表头悬停图标点击回调                                                     | —                                                 |
 | onPastedDataOverflow      | 粘贴溢出时回调                                                           | `PastedDataOverflow`                              |
 | sortChange                | 当表格的排序条件发生变化的时候会触发该事件                               | Map<string, SortStateMapItem>                     |
 | error                     | error回调                                                                | —                                                 |
@@ -262,6 +263,7 @@ type EVirtTableOptions = {
 | setCustomHeader         | 设置自定义表头                     | `(CustomHeader,ignoreEmit)`                               |
 | getCustomHeader         | 获取自定义表头数据                 | `{CustomHeader，Column[]}`                                |
 | clearChangeData         | 清空改变值                         | —                                                         |
+| setSortQueryData        | 设置后端排序查询数据               | `{ field: string, direction: 'asc' \| 'desc' }[]`         |
 
 ## Column
 | 参数 | 说明 | 类型 | 默认值 |
@@ -295,6 +297,7 @@ type EVirtTableOptions = {
 | children | 子列 | Column[] | — |
 | column | 当前列对象 | Column | — |
 | hoverIconName | 悬浮图标名字，可ICONS配置 | string | — |
+| headerHoverIconName | 表头悬浮图标名字，可ICONS配置 | string | — |
 | placeholder | 占位符文本 | string | — |
 | autoRowHeight | 格子自适应行高 | boolean | false |
 | overflowTooltipHeaderShow | 表头是否显示溢出提示 | boolean | true |
@@ -302,6 +305,7 @@ type EVirtTableOptions = {
 | overflowTooltipMaxWidth | 溢出提示的宽度 | number | 500 |
 | overflowTooltipPlacement | 溢出提示的位置|  ^[string]`top, top-start, top-end, right, right-start, right-end, left, left-start, left-end, bottom, bottom-start, bottom-end` | — |
 | sortBy | 排序类型 | `'number'`, `'string'`, `'date'`, `(a: rowData, b: rowData) => number` | — |
+| apiSortable | 启用后端排序 | boolean | false |
 | sortIconName | 默认排序图标 | `string` | — |
 | sortAscIconName | 升序排序图标 | `string` | — |
 | sortDescIconName | 降序排序图标 | `string` | — |

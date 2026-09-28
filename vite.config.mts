@@ -10,7 +10,7 @@ export default defineConfig({
             fileName: (format) => `index.${format}.js`,
             formats: ['es', 'cjs', 'umd'], // 生成 ES Module 和 CommonJS 格式
         },
-        sourcemap: true, // 生成 sourcemap 文件
+        sourcemap: false, // 生成 sourcemap 文件
     },
     server: {
         port: 8888, // 服务器端口号

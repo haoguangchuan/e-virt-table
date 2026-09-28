@@ -1,6 +1,6 @@
 import type Context from './Context';
 import { generateShortUUID } from './util';
-import type { Align, CellHeaderStyleMethod, Column, Fixed, LineClampType, Render, RenderType, Type, VerticalAlign } from './types';
+import type { Align, CellHeaderHoverIconMethod, CellHeaderStyleMethod, Column, Fixed, LineClampType, Render, RenderType, Type, VerticalAlign } from './types';
 import BaseCell from './BaseCell';
 import { Rule, Rules } from './Validator';
 import { TextInfo } from './Paint';
@@ -36,6 +36,7 @@ export default class CellHeader extends BaseCell {
     hasChildren: boolean;
     render: Render;
     style: Partial<CSSStyleDeclaration> = {};
+    hoverIconName = '';
     drawX = 0;
     drawY = 0;
     sortIconName = 'sort-default';
@@ -110,6 +111,7 @@ export default class CellHeader extends BaseCell {
         this.render = column.renderHeader;
         this.maxLineClampHeader = column.maxLineClampHeader || 'auto';
         this.renderHeaderType = column.renderHeaderType || 'default';
+        this.hoverIconName = column.headerHoverIconName || '';
     }
     /**
      * 是否可见，覆盖基类方法，表头是跟y滚动条没有关系的所以不需要加滚动参数
@@ -158,8 +160,10 @@ export default class CellHeader extends BaseCell {
         this.drawTextColor = textColor;
     }
     private updateOffset() {
-        if (this.column.sortBy) {
-            this.textOffsetRight = 16;
+        this.textOffsetRight = 0;
+        this.textOffsetLeft = 0;
+        if (this.column.sortBy || this.column.apiSortable) {
+            this.textOffsetRight += 16 + 2;
         }
         if (this.required) {
             this.textOffsetLeft = 12;
@@ -176,6 +180,7 @@ export default class CellHeader extends BaseCell {
         this.drawTextY = this.drawY;
         this.drawTextWidth = this.width;
         this.drawTextHeight = this.height;
+        this.updateHoverIcon();
         this.updateStyle();
     }
     draw() {
@@ -330,24 +335,77 @@ export default class CellHeader extends BaseCell {
     }
     private updateSortIcon() {
         // 如果没有sortBy配置且不是后端排序，不显示排序图标
-        if (!this.column.sortBy || !this.textInfo) {
+        if ((!this.column.sortBy && !this.column.apiSortable) || !this.textInfo) {
             return;
         }
         const { right, top, height } = this.textInfo;
-        const x = right + 4;
+        const x = right + 2;
         const y = top + (height - 16) / 2;
         const iconSize = 16;
         let iconName = this.sortIconName;
-        // 前端排序
-        const sortState = this.ctx.database.getSortState(this.key);
-        if (sortState.direction === 'asc') {
-            iconName = this.sortAscIconName;
-        } else if (sortState.direction === 'desc') {
-            iconName = this.sortDescIconName;
+        if (this.column.apiSortable) {
+            // 后端排序
+            const backendSortState = this.ctx.database.getBackendSortState(this.key);
+            if (backendSortState.direction === 'asc') {
+                iconName = this.sortAscIconName;
+            } else if (backendSortState.direction === 'desc') {
+                iconName = this.sortDescIconName;
+            }
+        } else {
+            // 前端排序
+            const sortState = this.ctx.database.getSortState(this.key);
+            if (sortState.direction === 'asc') {
+                iconName = this.sortAscIconName;
+            } else if (sortState.direction === 'desc') {
+                iconName = this.sortDescIconName;
+            }
         }
         const icon = this.ctx.icons.get(iconName);
         const sortImage = new CellImage(iconName, x, y, iconSize, iconSize, icon);
         this.setImage('sort', sortImage);
+    }
+    private updateHoverIcon() {
+        const { HEADER_CELL_HOVER_ICON_METHOD, CELL_HOVER_ICON_SIZE, CELL_PADDING } = this.ctx.config;
+        if (typeof HEADER_CELL_HOVER_ICON_METHOD === 'function') {
+            const hoverIconMethod: CellHeaderHoverIconMethod = HEADER_CELL_HOVER_ICON_METHOD;
+            const hoverIconName = hoverIconMethod({
+                colIndex: this.colIndex,
+                column: this.column,
+            });
+            if (hoverIconName !== undefined) {
+                this.hoverIconName = hoverIconName || '';
+            }
+        } else {
+            this.hoverIconName = this.column.headerHoverIconName || '';
+        }
+        const { hoverCellHeader } = this.ctx;
+        // 用 key 匹配，避免 loadColumns 重建后旧实例引用导致图标永不再现
+        const isHovered =
+            !!hoverCellHeader && (hoverCellHeader === this || hoverCellHeader.key === this.key);
+        if (!this.hoverIconName || !isHovered) {
+            this.cellImages.delete('hover');
+            return;
+        }
+        const isIconHover = this.ctx.hoverHeaderIconKey === this.key;
+        const drawIconName =
+            this.hoverIconName === 'icon-setting' && isIconHover
+                ? 'icon-setting-hover'
+                : this.hoverIconName;
+        const drawImageSource = this.ctx.icons.get(drawIconName) || this.ctx.icons.get(this.hoverIconName);
+        if (!drawImageSource) {
+            this.cellImages.delete('hover');
+            return;
+        }
+        const hoverImage = new CellImage(
+            drawIconName,
+            this.drawX + this.width - CELL_HOVER_ICON_SIZE - CELL_PADDING,
+            this.drawY + (this.height - CELL_HOVER_ICON_SIZE) / 2,
+            CELL_HOVER_ICON_SIZE,
+            CELL_HOVER_ICON_SIZE,
+            drawImageSource,
+        );
+        this.setImage('hover', hoverImage);
+        this.textOffsetRight += CELL_HOVER_ICON_SIZE + CELL_PADDING + 4;
     }
 
     getText() {

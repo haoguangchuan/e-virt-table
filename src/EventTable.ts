@@ -148,9 +148,14 @@ export default class EventTable {
             });
         });
         this.ctx.on('mouseout', (e: MouseEvent) => {
-            if (!this.ctx.containerElement.contains(e.relatedTarget as Node) && this.ctx.hoverCell !== undefined) {
+            if (
+                !this.ctx.containerElement.contains(e.relatedTarget as Node) &&
+                (this.ctx.hoverCell !== undefined || this.ctx.hoverCellHeader !== undefined)
+            ) {
                 this.ctx.hoverRow = undefined;
                 this.ctx.hoverCell = undefined;
+                this.ctx.hoverCellHeader = undefined;
+                this.ctx.hoverHeaderIconKey = undefined;
                 this.ctx.emit('draw');
             }
         });
@@ -167,16 +172,22 @@ export default class EventTable {
             this.handleHeaderEvent(x, y, this.ctx.header.renderCellHeaders, (cell: CellHeader) => {
                 this.imageEnterAndLeave(cell, e);
                 this.ctx.emit('cellHeaderMouseenter', cell, e);
-                // 移出事件
-                if (this.ctx.hoverCellHeader && this.ctx.hoverCellHeader !== cell) {
+                // 移出事件（含重建后旧实例：key 相同但引用不同时需切换）
+                if (
+                    this.ctx.hoverCellHeader &&
+                    this.ctx.hoverCellHeader !== cell &&
+                    this.ctx.hoverCellHeader.key !== cell.key
+                ) {
                     this.ctx.emit('cellHeaderMouseleave', this.ctx.hoverCellHeader, e);
                 }
                 if (this.ctx.hoverCellHeader === cell) {
                     return;
                 }
+                // 重建后同 key 的新实例也要重新绑定并重绘，否则悬停图标不出现
                 this.ctx.hoverCellHeader = cell;
                 this.visibleHoverCell = undefined; // 清除可视区hover
                 this.ctx.emit('cellHeaderHoverChange', cell, e);
+                this.ctx.emit('draw');
             });
             // 可视区
             this.handleBodyEvent(
@@ -188,7 +199,11 @@ export default class EventTable {
                     if (this.visibleHoverCell !== cell) {
                         this.ctx.emit('visibleCellMouseleave', cell, e);
                         this.visibleHoverCell = cell;
-                        this.ctx.hoverCellHeader = undefined; // 清除头部hover
+                        if (this.ctx.hoverCellHeader) {
+                            this.ctx.hoverCellHeader = undefined; // 清除头部hover
+                            this.ctx.hoverHeaderIconKey = undefined;
+                            this.ctx.emit('draw');
+                        }
                         this.ctx.emit('visibleCellHoverChange', cell, e);
                     }
                 },
@@ -234,6 +249,7 @@ export default class EventTable {
         const { offsetY, offsetX } = this.ctx.getOffset(e);
         const y = offsetY;
         const x = offsetX;
+        let hitHeaderHover = false;
         cell.cellImages.forEach((image, key) => {
             if (image.isInside(x, y)) {
                 if (key === 'drag') {
@@ -241,8 +257,19 @@ export default class EventTable {
                 } else {
                     this.ctx.stageElement.style.cursor = 'pointer';
                 }
+                if (cell instanceof CellHeader && key === 'hover') {
+                    hitHeaderHover = true;
+                    if (this.ctx.hoverHeaderIconKey !== cell.key) {
+                        this.ctx.hoverHeaderIconKey = cell.key;
+                        this.ctx.emit('draw');
+                    }
+                }
             }
         });
+        if (cell instanceof CellHeader && !hitHeaderHover && this.ctx.hoverHeaderIconKey === cell.key) {
+            this.ctx.hoverHeaderIconKey = undefined;
+            this.ctx.emit('draw');
+        }
     }
     private isBusy(e: MouseEvent) {
         const { offsetY, offsetX } = this.ctx.getOffset(e);

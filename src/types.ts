@@ -139,6 +139,8 @@ export interface Column {
     editorType?: string;
     editorProps?: any;
     hoverIconName?: string;
+    /** 表头悬停图标名字，可 ICONS 配置 */
+    headerHoverIconName?: string;
     placeholder?: string;
     width?: number;
     minWidth?: number;
@@ -156,6 +158,7 @@ export interface Column {
     rowspan?: number;
     sort?: number;
     sortBy?: SortByType;
+    apiSortable: boolean,
     sortIconName?: string; // 默认排序图标
     sortAscIconName?: string; // 升序排序图标
     sortDescIconName?: string; // 降序排序图标
@@ -349,6 +352,7 @@ export type CellTypeMethod = (params: CellParams) => Type | void;
 export type CellEditorMethod = (params: CellParams) => EditorOptions | void;
 export type CellRenderMethod = (params: CellParams) => string | void;
 export type CellHoverIconMethod = (params: CellParams) => string | void;
+export type CellHeaderHoverIconMethod = (params: CellHeaderParams) => string | void;
 export type SpanMethod = (params: SpanParams) => SpanType | void;
 export type SelectableMethod = (params: SelectableParams) => boolean | void;
 export type ExpandLazyMethod = (params: CellParams) => Promise<any[]>;

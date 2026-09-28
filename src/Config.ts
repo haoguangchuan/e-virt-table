@@ -12,6 +12,7 @@ import {
     BeforeSetSelectorMethod,
     CellEditorMethod,
     CellHeaderStyleMethod,
+    CellHeaderHoverIconMethod,
     CellHoverIconMethod,
     CellReadonlyMethod,
     CellRenderMethod,
@@ -369,6 +370,8 @@ export default class Config {
     BODY_CELL_RENDER_METHOD?: CellRenderMethod;
     /** 自定义只读 */
     BODY_CELL_HOVER_ICON_METHOD?: CellHoverIconMethod;
+    /** 自定义表头悬停图标 */
+    HEADER_CELL_HOVER_ICON_METHOD?: CellHeaderHoverIconMethod;
     /** 自定义跨列/行渲染 */
     SPAN_METHOD?: SpanMethod;
     /** 自定义选择禁用 */
