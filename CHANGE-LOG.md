@@ -375,3 +375,9 @@ fix:column.titleæ²¡è®¾ç½®ä¼šå‡ºçŽ°undefined
 fix:type='selection' title=â€˜â€™ çš„åˆ—è¿‡çª„ä¼šå‡ºçŽ°tooltip
 
 ---
+V1.2.33
+### Feature
+- ±íÍ·Ö§³ÖÐüÍ£Í¼±ê£º`headerHoverIconName` / `HEADER_CELL_HOVER_ICON_METHOD`£¬µã»÷´¥·¢ `headerHoverIconClick`
+- ÄÚÖÃ `icon-setting` Í¼±ê
+
+---

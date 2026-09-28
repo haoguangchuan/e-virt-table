@@ -102,6 +102,11 @@ export default class Header {
         this.ctx.header.height = this.height;
         this.ctx.header.visibleWidth = this.visibleWidth;
         this.ctx.header.visibleHeight = this.visibleHeight;
+        // loadColumns/loadData 会重建 CellHeader；清掉悬停引用并立即同步 render 列表，
+        // 避免仍指向旧实例或等待 RAF 期间 hover 命中失效
+        this.ctx.hoverCellHeader = undefined;
+        this.ctx.hoverHeaderIconKey = undefined;
+        this.update();
     }
     // 调整表头的宽度
     private initResizeColumn() {

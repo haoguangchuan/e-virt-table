@@ -30,6 +30,9 @@ export default class Editor {
             this.cellTarget = cell;
             const { xArr, yArr } = this.ctx.selector;
             this.selectorArrStr = JSON.stringify(xArr) + JSON.stringify(yArr);
+            this.resetEditorStyle();
+            // 仅文本格预聚焦：自定义编辑器（number/date/...）需把焦点交给外部组件
+            this.prepareFocusForCell(cell);
         });
         // 滚动时，结束编辑
         this.ctx.on('onScroll', () => {
@@ -101,9 +104,14 @@ export default class Editor {
                 this.ctx.emit('setMoveFocus', 'BOTTOM');
                 return;
             }
+            // 选中态回车：与 Excel 对齐，下移（Shift+Enter 上移），不进入编辑
             if (isEnter && !this.ctx.editing) {
                 e.preventDefault();
-                this.startEdit();
+                if (e.shiftKey) {
+                    this.ctx.emit('setMoveFocus', 'TOP');
+                    return;
+                }
+                this.ctx.emit('setMoveFocus', 'BOTTOM');
                 return;
             }
             const key = e.key;
@@ -148,8 +156,22 @@ export default class Editor {
             if (functionKeys.includes(key)) {
                 return;
             }
-            // 除了上面的建其他都开始编辑
-            this.startEdit(true);
+            // 已在编辑中：把按键交给当前编辑器（textarea / 扩展输入框）
+            if (this.enable || this.ctx.editing) {
+                return;
+            }
+            // IME：选中态焦点必须已在 textarea，否则首键会以拉丁字符插入
+            const isFocus = document.activeElement === this.inputEl;
+            if (!isFocus && this.ctx.focusCell.editorType === 'text') {
+                e.preventDefault();
+                this.focusInput();
+                return;
+            }
+            // 扩展编辑器（number 等）：吞掉首键并作为覆盖初值，与文本 ignoreValue 对齐
+            if (this.ctx.focusCell.editorType !== 'text') {
+                e.preventDefault();
+            }
+            this.startEdit(true, key);
         });
         // 重绘可能会导致cellClick事件不能触发，调整用按下cellMouseup按下延时赋值cellTarget
         this.ctx.on('cellMouseup', (cell: Cell) => {
@@ -195,6 +217,12 @@ export default class Editor {
             this.selectorArrStr = selectorArrStr;
             this.doneEdit();
             this.cellTarget = cell;
+            this.resetEditorStyle();
+            // 选中后仅对文本格预聚焦隐藏 textarea，保证 IME 首键可组合；
+            // number 等扩展编辑器若预聚焦会吞键并在外部 focus 时被 blur→doneEdit 关掉
+            if (this.ctx.selectOnlyOne) {
+                this.prepareFocusForCell(cell);
+            }
             // 单击单元格进入编辑模式
             if (this.ctx.config.ENABLE_EDIT_SINGLE_CLICK) {
                 // 启用合并单元格关联&&只有合并单元格时才进入编辑模式
@@ -231,10 +259,14 @@ export default class Editor {
         // 初始化文本编辑器
         this.inputEl = document.createElement('textarea');
         this.inputEl.setAttribute('rows', '1');
+        this.inputEl.setAttribute('tabindex', '-1');
         // 监听输入事件，自动调整高度
         this.inputEl.addEventListener('input', this.autoSize.bind(this));
         this.inputEl.addEventListener('blur', () => {
-            this.doneEdit();
+            // 仅编辑中结束；选中态预聚焦的隐藏输入被抢焦时不应清选区
+            if (this.enable) {
+                this.doneEdit();
+            }
         });
         this.editorEl = this.ctx.editorElement;
         this.inputEl.className = 'e-virt-table-editor-textarea';
@@ -284,11 +316,13 @@ export default class Editor {
         if (height > maxHeight) {
             height = maxHeight;
         }
-        // 显示编辑器
+        // 显示编辑器（勿用 display:none 隐藏，选中态需可聚焦以支持 IME）
         this.editorEl.style.display = 'inline-block';
+        this.editorEl.style.zIndex = '100';
         this.editorEl.style.left = `${this.drawX - 1}px`;
         this.editorEl.style.top = `${this.drawY - 1}px`;
         this.editorEl.style.bottom = `auto`;
+        this.editorEl.style.maxWidth = 'none';
         this.editorEl.style.maxHeight = `${maxHeight}px`;
         if (editorType === 'text') {
             this.inputEl.style.display = 'block';
@@ -298,14 +332,21 @@ export default class Editor {
             this.inputEl.style.width = `${width - 1}px`;
             this.inputEl.style.height = `auto`;
             this.inputEl.style.padding = `${CELL_PADDING}px`;
+            // 已预聚焦时不清空当前组合中的内容；仅在带入单元格值时覆盖
             if (value !== null) {
                 this.inputEl.value = value;
+            } else if (document.activeElement !== this.inputEl) {
+                this.inputEl.value = '';
             }
-            this.inputEl.focus({ preventScroll: true });
-            const length = this.inputEl.value.length;
-            this.inputEl.setSelectionRange(length, length);
+            this.focusInput();
+            if (value !== null) {
+                const length = this.inputEl.value.length;
+                this.inputEl.setSelectionRange(length, length);
+            }
         } else {
-            this.inputEl.style.display = 'none';
+            this.inputEl.style.display = 'block';
+            this.inputEl.style.width = '1px';
+            this.inputEl.style.height = '1px';
         }
 
         if (this.inputEl.scrollHeight > height || this.drawY < header.height) {
@@ -329,7 +370,43 @@ export default class Editor {
             this.inputEl.value = '';
         }
     }
-    startEdit(ignoreValue = false) {
+    private focusInput() {
+        if (document.activeElement !== this.inputEl) {
+            this.inputEl.focus({ preventScroll: true });
+        }
+    }
+    /** 文本格：预聚焦隐藏输入以支持 IME；其它类型：焦点回容器，避免吞键/打断扩展编辑器 */
+    private prepareFocusForCell(cell: Cell | null | undefined) {
+        if (cell?.editorType === 'text') {
+            this.focusInput();
+            return;
+        }
+        this.inputEl.value = '';
+        if (document.activeElement === this.inputEl) {
+            this.inputEl.blur();
+        }
+        this.ctx.containerElement.focus({ preventScroll: true });
+    }
+    private resetEditorStyle() {
+        const cell = this.cellTarget;
+        if (!cell) {
+            return;
+        }
+        // 保持可聚焦的隐藏态（1px + zIndex:-1），避免 display:none 导致 IME 无法附着
+        this.editorEl.style.display = 'inline-block';
+        this.editorEl.style.left = `${cell.drawX}px`;
+        this.editorEl.style.top = `${cell.drawY}px`;
+        this.editorEl.style.maxWidth = '1px';
+        this.editorEl.style.maxHeight = '1px';
+        this.editorEl.style.zIndex = '-1';
+        this.inputEl.style.display = 'block';
+        this.inputEl.style.minWidth = '1px';
+        this.inputEl.style.minHeight = '1px';
+        this.inputEl.style.width = '1px';
+        this.inputEl.style.height = '1px';
+        this.inputEl.style.padding = '0';
+    }
+    startEdit(ignoreValue = false, initialInput?: string) {
         this.cancel = false;
         // 如果不启用点击选择器编辑
         const { ENABLE_EDIT_CLICK_SELECTOR } = this.ctx.config;
@@ -366,7 +443,11 @@ export default class Editor {
             this.ctx.editing = true;
             this.cellTarget = focusCell;
             this.startEditByInput(this.cellTarget, ignoreValue);
-            this.ctx.emit('startEdit', this.cellTarget);
+            // ignoreValue：键盘打字激活，覆盖原值；initialInput 为首键（扩展编辑器使用）
+            this.ctx.emit('startEdit', this.cellTarget, {
+                ignoreValue: !!ignoreValue,
+                initialInput: ignoreValue ? initialInput : undefined,
+            });
         }
     }
     editCell(rowIndex: number, colIndex: number) {
@@ -397,7 +478,7 @@ export default class Editor {
             this.ctx.editing = true;
             this.cellTarget = focusCell;
             this.startEditByInput(this.cellTarget);
-            this.ctx.emit('startEdit', this.cellTarget);
+            this.ctx.emit('startEdit', this.cellTarget, { ignoreValue: false });
         }
     }
     doneEdit() {
@@ -408,9 +489,9 @@ export default class Editor {
         this.ctx.emit('doneEdit', this.cellTarget);
         this.enable = false;
         this.ctx.editing = false;
-        this.ctx.containerElement.focus({ preventScroll: true });
-        // 隐藏编辑器
-        this.editorEl.style.display = 'none';
+        this.resetEditorStyle();
+        // 文本格结束编辑后仍聚焦隐藏输入，便于继续 IME；其它类型交还容器焦点
+        this.prepareFocusForCell(this.cellTarget);
         this.ctx.emit('draw');
     }
     clearEditor() {
@@ -419,6 +500,7 @@ export default class Editor {
         this.selectorArrStr = '';
         this.ctx.clearSelector();
         this.ctx.focusCell = undefined;
+        this.inputEl.blur();
         this.ctx.emit('draw');
     }
     destroy() {

@@ -1,6 +1,16 @@
 import type Context from './Context';
 import { generateShortUUID } from './util';
-import type { Align, CellHeaderStyleMethod, Column, Fixed, LineClampType, Render, Type, VerticalAlign } from './types';
+import type {
+    Align,
+    CellHeaderHoverIconMethod,
+    CellHeaderStyleMethod,
+    Column,
+    Fixed,
+    LineClampType,
+    Render,
+    Type,
+    VerticalAlign,
+} from './types';
 import BaseCell from './BaseCell';
 import { Rule, Rules } from './Validator';
 import { TextInfo } from './Paint';
@@ -34,6 +44,7 @@ export default class CellHeader extends BaseCell {
     hasChildren: boolean;
     render: Render;
     style: Partial<CSSStyleDeclaration> = {};
+    hoverIconName = '';
     drawX = 0;
     drawY = 0;
     sortIconName = 'sort-default';
@@ -62,6 +73,13 @@ export default class CellHeader extends BaseCell {
     drawSortImageHeight = 0;
     drawSortImageName = '';
     drawSortImageSource?: HTMLImageElement;
+    // 表头悬停配置图标
+    drawHoverImageX = 0;
+    drawHoverImageY = 0;
+    drawHoverImageWidth = 0;
+    drawHoverImageHeight = 0;
+    drawHoverImageName = '';
+    drawHoverImageSource?: HTMLImageElement;
     constructor(ctx: Context, colIndex: number, x: number, y: number, width: number, height: number, column: Column) {
         super(ctx, x, y, width, height, 'header', column.fixed);
         this.ctx = ctx;
@@ -95,6 +113,7 @@ export default class CellHeader extends BaseCell {
         this.sortIconName = column.sortIconName || 'sort-default';
         this.sortAscIconName = column.sortAscIconName || 'sort-asc';
         this.sortDescIconName = column.sortDescIconName || 'sort-desc';
+        this.hoverIconName = column.headerHoverIconName || '';
         this.rowKey = generateShortUUID();
         this.overflowTooltipShow = column.overflowTooltipHeaderShow === false ? false : true;
         this.hasChildren = (column.children && column.children.length > 0) || false; // 是否有子
@@ -147,6 +166,7 @@ export default class CellHeader extends BaseCell {
         this.drawTextY = this.drawY;
         this.drawTextWidth = this.width;
         this.drawTextHeight = this.height;
+        this.updateHoverIcon();
         this.updateStyle();
     }
     draw() {
@@ -155,6 +175,67 @@ export default class CellHeader extends BaseCell {
         this.drawText();
         this.drawSelector();
         this.drawSortIcon();
+        this.drawHoverIcon();
+    }
+    private clearHoverIcon() {
+        this.drawHoverImageX = 0;
+        this.drawHoverImageY = 0;
+        this.drawHoverImageWidth = 0;
+        this.drawHoverImageHeight = 0;
+        this.drawHoverImageName = '';
+        this.drawHoverImageSource = undefined;
+    }
+    private updateHoverIcon() {
+        this.clearHoverIcon();
+        const { HEADER_CELL_HOVER_ICON_METHOD, CELL_HOVER_ICON_SIZE, CELL_PADDING } = this.ctx.config;
+        if (typeof HEADER_CELL_HOVER_ICON_METHOD === 'function') {
+            const hoverIconMethod: CellHeaderHoverIconMethod = HEADER_CELL_HOVER_ICON_METHOD;
+            const hoverIconName = hoverIconMethod({
+                colIndex: this.colIndex,
+                column: this.column,
+            });
+            if (hoverIconName !== undefined) {
+                this.hoverIconName = hoverIconName || '';
+            }
+        } else {
+            this.hoverIconName = this.column.headerHoverIconName || '';
+        }
+        const { hoverCellHeader } = this.ctx;
+        // 用 key 匹配，避免 loadColumns 重建后旧实例引用导致图标永不再现
+        const isHovered =
+            !!hoverCellHeader &&
+            (hoverCellHeader === this || hoverCellHeader.key === this.key);
+        if (!this.hoverIconName || !isHovered) {
+            return;
+        }
+        const isIconHover = this.ctx.hoverHeaderIconKey === this.key;
+        const drawIconName =
+            this.hoverIconName === 'icon-setting' && isIconHover
+                ? 'icon-setting-hover'
+                : this.hoverIconName;
+        const drawImageSource = this.ctx.icons.get(drawIconName) || this.ctx.icons.get(this.hoverIconName);
+        if (!drawImageSource) {
+            return;
+        }
+        this.drawHoverImageX = this.drawX + this.width - CELL_HOVER_ICON_SIZE - CELL_PADDING;
+        this.drawHoverImageY = this.drawY + (this.height - CELL_HOVER_ICON_SIZE) / 2;
+        this.drawHoverImageWidth = CELL_HOVER_ICON_SIZE;
+        this.drawHoverImageHeight = CELL_HOVER_ICON_SIZE;
+        this.drawHoverImageName = drawIconName;
+        this.drawHoverImageSource = drawImageSource;
+    }
+    private drawHoverIcon() {
+        if (!this.drawHoverImageSource) {
+            return;
+        }
+        // 表头配置图标：无背景框，仅绘制图标本身
+        this.ctx.paint.drawImage(
+            this.drawHoverImageSource,
+            this.drawHoverImageX,
+            this.drawHoverImageY,
+            this.drawHoverImageWidth,
+            this.drawHoverImageHeight,
+        );
     }
     private drawEdge() {
         const {
@@ -171,13 +252,17 @@ export default class CellHeader extends BaseCell {
     private drawText() {
         const {
             paint,
-            config: { HEADER_FONT, CELL_PADDING, REQUIRED_COLOR },
+            config: { HEADER_FONT, CELL_PADDING, REQUIRED_COLOR, CELL_HOVER_ICON_SIZE },
         } = this.ctx;
         const hasSort = !!(this.column.sortBy || this.column.apiSortable);
         const sortIconSize = 16;
         const sortGap = 2; // 文字与排序图标间距
         const sortIconReserve = hasSort ? sortIconSize + sortGap : 0;
-        const cacheTextKey = `${this.displayText}_${this.drawTextWidth}_${sortIconReserve}`;
+        const hoverIconReserve = this.drawHoverImageSource
+            ? CELL_HOVER_ICON_SIZE + CELL_PADDING + 4
+            : 0;
+        const offsetRight = sortIconReserve + hoverIconReserve;
+        const cacheTextKey = `${this.displayText}_${this.drawTextWidth}_${offsetRight}`;
         this.ellipsis = paint.drawText(
             this.displayText,
             this.drawTextX,
@@ -191,7 +276,7 @@ export default class CellHeader extends BaseCell {
                 align: this.align,
                 verticalAlign: this.verticalAlign,
                 maxLineClamp: this.maxLineClamp,
-                offsetRight: sortIconReserve,
+                offsetRight,
                 offsetLeft: this.required ? 12 : 0, // 必填星号占位
                 cacheTextKey,
                 textCallback: (textInfo: TextInfo) => {
